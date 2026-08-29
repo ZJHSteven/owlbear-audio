@@ -25,9 +25,9 @@ const PROBES = {
     displayName: "Owlbear Audio Probe - Tiny Video + Opus",
   },
   oneFrame: {
-    path: "/probes/production/oneframe-64-remux-6s.webm",
-    fileName: "owlbear-audio-probe-one-frame.webm",
-    displayName: "Owlbear Audio Probe - One Frame + Opus",
+    path: "/probes/production/oneframe-icon-64-6s.webm",
+    fileName: "owlbear-audio-probe-production-envelope.webm",
+    displayName: "Owlbear Audio Probe - Production Envelope",
   },
 } as const;
 
