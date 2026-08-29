@@ -316,13 +316,16 @@ React + TypeScript + Vite。
 - [x] 真实登录 Owlbear 环境确认账户与储存额度。
 - [x] 确认原生上传 accept MIME。
 - [x] 证明 `.opus` 直接上传被拒绝。
-- [ ] 搭一个最小 Owlbear SDK probe extension。
-- [ ] 验证 audio-only WebM。
-- [ ] 验证 tiny-video WebM + Opus。
-- [ ] 上传后通过 `downloadImages()` / fetch 拉回。
-- [ ] 检查 Content-Type / Content-Length / Range / CORS。
-- [ ] 检查音轨是否仍存在。
-- [ ] 浏览器实际播放。
+- [x] 搭一个最小 Owlbear SDK probe extension，并安装到真实房间；SDK 握手成功。
+- [x] 验证 audio-only WebM：SDK 可以接收 48,101-byte `video/webm` 并进入媒体解析，但最终提交时 Owlbear 报 `Unable to generate video thumbnail`，不会发出对象存储 POST；**正式方案不采用 audio-only WebM**。
+- [x] 验证 tiny-video WebM + Opus：48,390-byte、16×16 / 1 fps VP9 + Opus 的合法 `video/webm` 可以完整上传。
+- [x] 用 Owlbear 原生 Asset Manager 上传同一份 tiny-video WebM 做基线对照；本地预处理约 72 ms，视频对象 POST 200、缩略图 POST 200、资产记录 POST 201。
+- [x] 定位早期 SDK timeout：不是 Mihomo / Fake-IP / CORS / WebM 格式，而是测试所在 Owlbear 标签处于 `visibilityState=hidden`，使宿主用于读取媒体 metadata 的 media element stalled；换到真正 visible 的 Owlbear 标签后 SDK 正常返回并进入上传 UI。
+- [x] 上传后通过 `downloadImages()` / fetch 拉回：返回 `video/webm`、16×16 和 `videos.owlbear.rodeo` CDN URL，跨域 fetch 成功。
+- [x] 检查 Content-Type / Content-Length / CORS：`video/webm`、48,390 bytes、`Access-Control-Allow-Origin: *`。
+- [~] 检查 Range：测试 `Range: bytes=0-1023` 时 CDN 返回 200 + 完整文件，而非 206；需要针对长音轨/浏览器 seek 再评估。
+- [x] 检查音轨是否仍存在：CDN 回下载经 ffprobe 仍为 VP9 + 48 kHz Opus，且 SHA-256 与上传前完全一致。
+- [x] 浏览器实际播放：扩展 iframe 中 `<audio src=videos.owlbear.rodeo/...webm>` 可直接 `loadedmetadata`，duration=6.008 s。
 
 ### Phase 1 — Playback Core
 

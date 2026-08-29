@@ -2,20 +2,28 @@
 
 ## 当前结论（必须最新）
 
-- 现状：项目已初始化，正在进行 Phase 0 的 Owlbear 资产存储可行性验证。
+- 现状：Phase 0 的核心存储假设已经被真实账户实验验证成立：**合法的超轻量视频 WebM 可以把 Opus 音频原样存入 Owlbear 自身资产空间，并由扩展直接回读、fetch 和播放。**
 - 已完成：
   - 建立 React + TypeScript + Vite 项目与独立 Git 仓库。
-  - 真实登录 Owlbear Rodeo 房间并检查当前账户储存：200 MB 上限，已用约 58.2 MB。
-  - 通过真实页面确认原生上传器只接受 JPEG/GIF/PNG/WebP/MP4/WebM。
-  - 生成 6 秒 Opus / audio-only WebM / tiny-video WebM+Opus 三种探针。
-  - 实测 `.opus` 直接上传被 Owlbear 前端拒绝。
-  - 完成首版产品与架构 ExecPlan，确定“临场简单、编排完整、高级不阉割”的渐进式设计。
-- 正在做：最小 Owlbear SDK probe extension 已可构建；manifest、Owlbear CORS、WebM 上传按钮、资产回读/fetch/audio 播放检查以及 full-screen Modal 验证页均已实现。下一步把本地扩展装进真实房间并跑两种 WebM 实测。
+  - 真实登录 Owlbear Rodeo 房间并检查当前账户储存：200 MB 上限，实验前已用约 58.2 MB。
+  - 通过真实页面确认原生上传器只接受 JPEG/GIF/PNG/WebP/MP4/WebM；`.opus` 直接上传被拒绝。
+  - 本地 `Owlbear Audio Lab v0.0.1` 已安装到真实账户和房间，SDK 握手成功。
+  - 找到早期 `uploadImages()` 5 秒超时的真正原因：测试所在 Owlbear 标签页是 `document.visibilityState=hidden`；Chrome 会让 Owlbear 用于读取媒体 metadata 的隐藏 media element 长时间 stalled。换到真正 visible 的 Owlbear 房间后，同样预处理约 72 ms 完成，SDK 正常工作。
+  - 原生 Asset Manager 已成功上传 `probe-av.webm`（16×16、1 fps、VP9 + Opus）；视频对象 POST 200、WebP 缩略图 POST 200、资产记录 POST 201。
+  - SDK `OBR.assets.uploadImages()` 在 visible 房间中同样成功，并能打开 Owlbear 原生文件夹/标签选择流程；最终上传成功。
+  - `OBR.assets.downloadImages()` 能取回该资产：MIME=`video/webm`、尺寸 16×16，并返回 `https://videos.owlbear.rodeo/...webm` CDN URL。
+  - CDN URL 支持跨域读取（`Access-Control-Allow-Origin: *`）；扩展 `fetch()` 成功读回全部 48,390 bytes；`<audio>` 直接加载同一 WebM 成功，duration=6.008 s。
+  - 从 Owlbear CDN 重新下载的文件经 `ffprobe` 仍含 VP9 + 48 kHz Opus；上传前后 SHA-256 完全一致，证明 Owlbear **不转码、不剥离音轨、不改原始 WebM 字节**，只另外生成缩略图。
+  - 纯 audio-only WebM 已完成最终边界测试：SDK 能接收并进入媒体解析，但最终 `UPLOAD IMAGES` 报 `Unable to generate video thumbnail`，且不会进入对象存储 POST，因此不能作为可靠正式格式。
+  - tiny-video 与 audio-only 的 6 秒测试文件仅相差 289 bytes，说明保留极小视频轨的额外空间成本几乎可以忽略。
+  - CDN 对本次 `Range: bytes=0-1023` 请求返回 200 和完整文件，而非 206 部分内容；后续大文件 seek / Hot Cue 设计需要继续评估这一点。
+  - 完成 `docs/PRODUCT-DESIGN.md`，正式固定 DJ / QLab / Ableton 三类范式与 Live / Director / Advanced 三层 UI 思路。
+- 正在做：Phase 0 已从“能不能存”转向“把可用存储通道工程化”：确定正式封装规格、索引策略、批量导入体验与播放/同步核心。
 - 下一步：
-  1. 启动本地 Vite server，并把 `http://localhost:5173/manifest.json` 安装进真实 Owlbear 账户/房间。
-  2. 用 SDK 分别上传 audio-only WebM 与 tiny-video WebM + Opus。
-  3. 从 Owlbear 资产选择器重新取回并用 fetch / `<audio>` 验证。
-  4. 若能得到 CDN URL，再从本机下载并用 ffprobe 检查服务端是否保留 Opus 音轨。
+  1. 固定生产封装为 **极小视频轨 + Opus 的 WebM**，测试更长时长下视频轨实际开销，并找最稳妥的最小分辨率/帧率/编码参数。
+  2. 研究 Owlbear 上传确认界面能否减少重复操作，以及 `typeHint` / 文件夹 / 标签的最佳组织方式。
+  3. 验证 CDN URL 跨重新载入、跨玩家、跨会话的稳定性，并决定索引需要保存 URL 还是可重新解析的资产引用。
+  4. 开始 Phase 1：Web Audio 播放核心、Bus / Clip / Cue / Scene 数据模型与 GM authoritative 同步。
 
 ## 关键决策与理由（防止“吃书”）
 
