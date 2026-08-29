@@ -43,6 +43,13 @@ export class BackgroundCoordinator {
     return {
       contextState: this.engine.contextState,
       isUnlocked: this.engine.isUnlocked,
+      busGainsDb: {
+        MASTER: this.engine.getBusGainDb("MASTER"),
+        MUSIC: this.engine.getBusGainDb("MUSIC"),
+        AMBIENCE: this.engine.getBusGainDb("AMBIENCE"),
+        SFX: this.engine.getBusGainDb("SFX"),
+        VOICE: this.engine.getBusGainDb("VOICE"),
+      },
       channels: this.engine.snapshot(),
     };
   }
@@ -50,6 +57,9 @@ export class BackgroundCoordinator {
   private async handle(command: RuntimeCommand): Promise<void> {
     try {
       switch (command.type) {
+        case "GET_SNAPSHOT":
+          break;
+
         case "UNLOCK":
           await this.engine.unlock();
           break;

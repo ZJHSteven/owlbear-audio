@@ -342,7 +342,8 @@ React + TypeScript + Vite。
 - [x] 验证 Action iframe 收起后的播放生命周期：当前 Owlbear/Chrome 中 iframe 保留且媒体继续，但正式架构不依赖该行为。
 - [x] 增加 `background_url` 并完成 clean-room autoplay / user-activation 验证。
 - [x] 确定唯一 audio playback owner：**Background AudioEngine + Coordinator**；Action 只负责真实 gesture 和控制 UI。
-- [~] 定义 Broadcast transport protocol：LOCAL runtime RPC 已有 UNLOCK/PLAY/PAUSE/STOP/STOP_ALL/SEEK/SET_BUS_GAIN + ACK/snapshot；GM authoritative revision/timestamp 尚待实现。
+- [~] 定义 Broadcast transport protocol：LOCAL runtime RPC 已有 GET_SNAPSHOT/UNLOCK/PLAY/PAUSE/STOP/STOP_ALL/SEEK/SET_BUS_GAIN + ACK/snapshot；GM authoritative revision/timestamp 尚待实现。
+- [x] Action Live Console 基础 transport：Enable Audio / Play / Pause / Stop / PANIC + Master/Music/Ambience gain；Action 独立 reload 后可从 Background snapshot 恢复状态。
 - [ ] player synchronization / reconnect / drift correction。
 
 ### Phase 2 — Library & Import

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import OBR, { buildImageUpload, type ImageDownload } from "@owlbear-rodeo/sdk";
 import { BackgroundClient } from "./runtime/BackgroundClient";
 import { BackgroundCoordinator } from "./runtime/BackgroundCoordinator";
+import { LiveConsole } from "./ui/LiveConsole";
 import "./App.css";
 
 /**
@@ -287,6 +288,7 @@ function App() {
   }
 
   const isStudio = view === "studio";
+  const isStorageProbe = view === "storage-probe";
 
   if (isBackground) {
     return <main aria-label="Owlbear Audio background runtime" />;
@@ -308,6 +310,10 @@ function App() {
         </div>
       </main>
     );
+  }
+
+  if (!isStorageProbe) {
+    return <LiveConsole ready={ready} />;
   }
 
   return (

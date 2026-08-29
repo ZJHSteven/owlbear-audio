@@ -1,9 +1,134 @@
-/*
- * Phase 0 存储探针的临时样式。
- *
- * 这不是最终产品视觉稿，只保证在 Owlbear 420px Action popover 和 full-screen Modal 中
- * 信息清晰、按钮可操作、日志可读。正式 UI 会在存储链路验证后单独设计。
- */
+/* Phase 0 probe + Phase 1 Live Console 的工程样式；视觉系统后续再统一精修。 */
+
+.live-shell {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  padding: 16px;
+  text-align: left;
+}
+
+.live-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.live-header h1 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.runtime-chip {
+  flex: none;
+  max-width: 170px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 10px;
+  text-align: center;
+}
+
+.runtime-chip.ready {
+  border-color: #15803d;
+  color: #15803d;
+}
+
+.now-card,
+.mixer-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--code-bg);
+}
+
+.now-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.now-copy strong {
+  color: var(--text-h);
+  font-size: 15px;
+}
+
+.now-copy small,
+.live-status {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.transport-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.transport-grid .primary-control,
+.transport-grid .panic-control {
+  grid-column: span 2;
+}
+
+.primary-control {
+  font-weight: 700;
+}
+
+.panic-control {
+  border-color: #b91c1c;
+  color: #b91c1c;
+  font-weight: 800;
+}
+
+.mixer-card {
+  display: grid;
+  gap: 10px;
+}
+
+.mixer-row {
+  display: grid;
+  grid-template-columns: 68px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-h);
+  font-size: 11px;
+}
+
+.mixer-row input {
+  width: 100%;
+}
+
+.mixer-row output {
+  text-align: right;
+  color: var(--text);
+  font-size: 10px;
+}
+
+.live-status {
+  min-height: 32px;
+  padding: 10px 2px;
+}
+
+.live-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
 
 .probe-shell,
 .studio-probe {

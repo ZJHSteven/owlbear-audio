@@ -141,7 +141,7 @@ async function main() {
 
   const probeButton = await actionClient.evaluate(`(() => {
     const button = [...document.querySelectorAll('button')]
-      .find((element) => element.textContent?.includes('Broadcast → Background'));
+      .find((element) => element.textContent?.includes('▶ Play'));
     if (!button) return null;
     const rect = button.getBoundingClientRect();
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, disabled: button.disabled };
@@ -165,7 +165,58 @@ async function main() {
     `window.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__?.snapshot() ?? null`,
   );
 
-  console.log(JSON.stringify({ initialBackground, after, later }, null, 2));
+  await actionClient.evaluate(`location.reload()`, false);
+  await sleep(1400);
+  await actionClient.evaluate(`window.__OWLBEAR_AUDIO_OPEN_ACTION__?.()`);
+  await sleep(250);
+  const recoveredAction = await actionClient.evaluate(`({
+    text: document.body.innerText,
+    pauseDisabled: [...document.querySelectorAll('button')]
+      .find((element) => element.textContent?.includes('Ⅱ Pause'))?.disabled ?? null,
+  })`);
+
+  const pauseButton = await actionClient.evaluate(`(() => {
+    const button = [...document.querySelectorAll('button')]
+      .find((element) => element.textContent?.includes('Ⅱ Pause'));
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, disabled: button.disabled };
+  })()`);
+  if (!pauseButton || pauseButton.disabled) throw new Error("Pause button unavailable");
+  await clickPoint(actionClient, pauseButton.x, pauseButton.y);
+  await sleep(350);
+  const paused = await backgroundClient.evaluate(
+    `window.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__?.snapshot() ?? null`,
+  );
+
+  const playAgain = await actionClient.evaluate(`(() => {
+    const button = [...document.querySelectorAll('button')]
+      .find((element) => element.textContent?.includes('▶ Play'));
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, disabled: button.disabled };
+  })()`);
+  if (!playAgain || playAgain.disabled) throw new Error("Play button unavailable after pause");
+  await clickPoint(actionClient, playAgain.x, playAgain.y);
+  await sleep(350);
+
+  const panicButton = await actionClient.evaluate(`(() => {
+    const button = [...document.querySelectorAll('button')]
+      .find((element) => element.textContent?.includes('PANIC · STOP ALL'));
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, disabled: button.disabled };
+  })()`);
+  if (!panicButton || panicButton.disabled) throw new Error("Panic button unavailable");
+  await clickPoint(actionClient, panicButton.x, panicButton.y);
+  await sleep(350);
+  const panicked = await backgroundClient.evaluate(
+    `window.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__?.snapshot() ?? null`,
+  );
+
+  console.log(
+    JSON.stringify({ initialBackground, after, later, recoveredAction, paused, panicked }, null, 2),
+  );
 
   actionClient.close();
   backgroundClient.close();

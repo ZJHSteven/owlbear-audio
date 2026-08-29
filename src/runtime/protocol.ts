@@ -6,6 +6,10 @@ export const RUNTIME_EVENT_CHANNEL = "dev.zjhsteven.owlbear-audio/runtime-event"
 export type RuntimeCommand =
   | {
       id: string;
+      type: "GET_SNAPSHOT";
+    }
+  | {
+      id: string;
       type: "UNLOCK";
     }
   | {
@@ -52,6 +56,7 @@ export type RuntimeCommandInput = WithoutId<RuntimeCommand>;
 export interface RuntimeSnapshot {
   contextState: AudioContextState | "UNINITIALIZED";
   isUnlocked: boolean;
+  busGainsDb: Record<BusId, number>;
   channels: Array<{
     id: string;
     busId: Exclude<BusId, "MASTER">;

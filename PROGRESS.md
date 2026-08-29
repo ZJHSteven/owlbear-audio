@@ -27,9 +27,11 @@
 - 已完成 Phase 1 的关键运行时验证：**Background 已正式确定为唯一 Audio Host + local coordinator。** 全新 Room tab 初始 Background `userActivation=false/false`；Action 真实点击后经 LOCAL Broadcast，Background handler 内 `AudioEngine.unlock()` 成功令 `AudioContext=running`，随后 MUSIC channel 正常播放并 loop。
 - 已建立正式 runtime RPC 骨架：`BackgroundCoordinator` / `BackgroundClient` / `runtime/protocol.ts`，支持 UNLOCK、PLAY、PAUSE、STOP、STOP_ALL、SEEK、SET_BUS_GAIN 以及 ACK/snapshot。
 - 已建立可重复 clean-room CDP 回归脚本：每次新建独立 Owlbear Room tab，避免普通 reload 保留 sticky `hasBeenActive` 造成 autoplay 假阳性；测试完成自动关闭临时 tab。
+- Action 默认页已经从 Storage Probe 切换为 Phase 1 **Live Console**：Enable Audio、Play、Pause、Stop、PANIC、Master/Music/Ambience gain 均通过 `BackgroundClient` 控制；Storage Probe 保留在独立 diagnostics view。
+- 新增 `GET_SNAPSHOT`：Action iframe 即使独立 reload，也能从 Background 恢复 `Audio Ready`、当前 channel 的 Playing/Paused 状态和 Bus gain；真机回归已确认播放不中断且新 Action 的 Pause 按钮可立即使用。
 - 下一步：
-  1. 把 Action probe UI 收敛成真正的 Live Console：Play/Pause/Stop/Panic + Master/Music/Ambience gain。
-  2. 给 transport 增加 revision、authoritative timestamp、startedAt / pausedAt，为 GM→PLAYER 同步和漂移修正做准备。
+  1. 给 transport 增加 revision、authoritative timestamp、startedAt / pausedAt，为 GM→PLAYER 同步和漂移修正做准备。
+  2. 将 Live Console 从 runtime test media 改成真正的 Library/Cue 当前项，并加入 GO / NEXT / DEVAMP 状态。
   3. 把双 Deck / preload / equal-power crossfade 串进 BackgroundCoordinator 的正式命令层。
   4. 验证 CDN URL 跨 reload、跨玩家、跨会话稳定性，并决定 Library 索引保存 URL 还是 Owlbear asset identity。
   5. 做玩家端首次 Enable Audio、断线重连和 sync recovery。

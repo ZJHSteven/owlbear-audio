@@ -54,6 +54,10 @@ export class BackgroundClient {
     });
   }
 
+  snapshot(): Promise<RuntimeResponse> {
+    return this.send({ type: "GET_SNAPSHOT" });
+  }
+
   unlock(): Promise<RuntimeResponse> {
     return this.send({ type: "UNLOCK" });
   }
