@@ -24,6 +24,11 @@ const PROBES = {
     fileName: "owlbear-audio-probe-tiny-video.webm",
     displayName: "Owlbear Audio Probe - Tiny Video + Opus",
   },
+  oneFrame: {
+    path: "/probes/production/oneframe-64-remux-6s.webm",
+    fileName: "owlbear-audio-probe-one-frame.webm",
+    displayName: "Owlbear Audio Probe - One Frame + Opus",
+  },
 } as const;
 
 type ProbeKey = keyof typeof PROBES;
@@ -258,6 +263,9 @@ function App() {
           </button>
           <button disabled={!ready || busy} onClick={() => uploadProbe("tinyVideo")}>
             上传 Tiny-video WebM + Opus
+          </button>
+          <button disabled={!ready || busy} onClick={() => uploadProbe("oneFrame")}>
+            上传 One-frame WebM + Opus
           </button>
         </div>
       </section>
