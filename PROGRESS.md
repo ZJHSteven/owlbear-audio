@@ -10,11 +10,12 @@
   - 生成 6 秒 Opus / audio-only WebM / tiny-video WebM+Opus 三种探针。
   - 实测 `.opus` 直接上传被 Owlbear 前端拒绝。
   - 完成首版产品与架构 ExecPlan，确定“临场简单、编排完整、高级不阉割”的渐进式设计。
-- 正在做：最小 Owlbear SDK probe extension 已开始搭建，`@owlbear-rodeo/sdk` 已安装，两个 WebM 探针也已复制进扩展静态资源；下一步建立 manifest/CORS 与探针上传按钮，直接验证 Owlbear SDK 上传、回读和音轨保留。
+- 正在做：最小 Owlbear SDK probe extension 已可构建；manifest、Owlbear CORS、WebM 上传按钮、资产回读/fetch/audio 播放检查以及 full-screen Modal 验证页均已实现。下一步把本地扩展装进真实房间并跑两种 WebM 实测。
 - 下一步：
-  1. 建立本地 manifest + CORS 配置。
-  2. 在浏览器内生成/获取探针 Blob 并调用 `OBR.assets.uploadImages()`。
+  1. 启动本地 Vite server，并把 `http://localhost:5173/manifest.json` 安装进真实 Owlbear 账户/房间。
+  2. 用 SDK 分别上传 audio-only WebM 与 tiny-video WebM + Opus。
   3. 从 Owlbear 资产选择器重新取回并用 fetch / `<audio>` 验证。
+  4. 若能得到 CDN URL，再从本机下载并用 ffprobe 检查服务端是否保留 Opus 音轨。
 
 ## 关键决策与理由（防止“吃书”）
 
