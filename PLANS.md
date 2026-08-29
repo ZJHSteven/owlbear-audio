@@ -326,14 +326,24 @@ React + TypeScript + Vite。
 - [~] 检查 Range：测试 `Range: bytes=0-1023` 时 CDN 返回 200 + 完整文件，而非 206；需要针对长音轨/浏览器 seek 再评估。
 - [x] 检查音轨是否仍存在：CDN 回下载经 ffprobe 仍为 VP9 + 48 kHz Opus，且 SHA-256 与上传前完全一致。
 - [x] 浏览器实际播放：扩展 iframe 中 `<audio src=videos.owlbear.rodeo/...webm>` 可直接 `loadedmetadata`，duration=6.008 s。
+- [x] 将生产封装进一步压缩为 **单帧 VP9 + 完整 Opus**：视频轨只含 1 个 packet，Owlbear 仍能生成缩略图并上传；视频开销不随音轨时长增长。
+- [x] 生产封面改为 64×64 极简均衡器图标；真实 Owlbear 自动生成 WebP thumbnail 约 726 B，避免 Attachments 中出现难以辨认的全黑块。
+- [x] 验证 Collection 隔离：创建 `Owlbear Audio` Collection 并上传探针后，该资产只在该 Collection 出现，切回 Default 不会污染普通 Attachments；同时保留用户手工查看/删除的恢复通道。
+- [x] 生产存储规格落盘至 `docs/STORAGE-FORMAT.md`。
+- [x] SDK UI surface 职责落盘至 `docs/SDK-UI-ARCHITECTURE.md`。
 
-### Phase 1 — Playback Core
+### Phase 1 — Playback Core（进入当前阶段）
 
-- Web Audio based engine。
-- Asset / Clip / Cue / Bus / Scene 数据模型。
-- 双 Deck + 多 Layer。
-- crossfade / loop / preload / gain。
-- player synchronization。
+- [ ] 建立 Asset / Clip / Cue / Bus / Scene 类型模型。
+- [ ] 建立单例 Web Audio / HTMLMediaElement playback runtime。
+- [ ] Music / Ambience / SFX / Master Bus gain graph。
+- [ ] preload / play / pause / stop / seek / loop range。
+- [ ] equal-power crossfade 与 gain ramp。
+- [ ] 验证 Action iframe 收起后的播放生命周期。
+- [ ] 增加 `background_url` coordinator probe，验证 autoplay / user-activation 边界。
+- [ ] 确定唯一 audio playback owner（优先验证 Background coordinator + Action Audio Host）。
+- [ ] 定义 Broadcast transport protocol 与 GM authoritative state。
+- [ ] player synchronization / reconnect / drift correction。
 
 ### Phase 2 — Library & Import
 
