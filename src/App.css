@@ -1,184 +1,163 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
+/*
+ * Phase 0 存储探针的临时样式。
+ *
+ * 这不是最终产品视觉稿，只保证在 Owlbear 420px Action popover 和 full-screen Modal 中
+ * 信息清晰、按钮可操作、日志可读。正式 UI 会在存储链路验证后单独设计。
+ */
 
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-}
-
-.hero {
-  position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
-}
-
-#center {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
-}
-
-#next-steps {
-  display: flex;
-  border-top: 1px solid var(--border);
-  text-align: left;
-
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
-
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
-}
-
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-
-#next-steps ul {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
-}
-
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
-}
-
-.ticks {
-  position: relative;
+.probe-shell,
+.studio-probe {
+  box-sizing: border-box;
   width: 100%;
+  min-height: 100vh;
+  padding: 20px;
+  text-align: left;
+}
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
+.probe-shell header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.probe-shell h1,
+.studio-probe h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+.probe-section {
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.probe-section h2 {
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+.probe-section p {
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.status {
+  flex: none;
+  font-size: 12px;
+  color: #b45309;
+}
+
+.status.ready {
+  color: #15803d;
+}
+
+.button-stack {
+  display: grid;
+  gap: 8px;
+}
+
+button {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-h);
+  background: var(--code-bg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.inspection {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.inspection dl {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.inspection dt {
+  color: var(--text);
+}
+
+.inspection dd {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.inspection audio {
+  width: 100%;
+}
+
+.log-section pre {
+  box-sizing: border-box;
+  max-height: 180px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--text-h);
+  font: 11px/1.45 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.studio-probe p {
+  max-width: 900px;
+  margin: 12px 0 20px;
+}
+
+.studio-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 2fr) minmax(220px, 1fr);
+  grid-template-rows: minmax(300px, 1fr) minmax(180px, 0.55fr);
+  gap: 10px;
+  min-height: calc(100vh - 130px);
+}
+
+.studio-grid section {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text);
+}
+
+.studio-grid section:nth-child(4) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .studio-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(4, minmax(160px, auto));
   }
 
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
-  }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
+  .studio-grid section:nth-child(4) {
+    grid-column: auto;
   }
 }
