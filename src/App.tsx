@@ -1,122 +1,310 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useMemo, useState } from "react";
+import OBR, { buildImageUpload, type ImageDownload } from "@owlbear-rodeo/sdk";
+import "./App.css";
+
+/**
+ * 当前页面只是 Phase 0 的“存储探针”，不是最终产品 UI。
+ *
+ * 它只做三件事：
+ * 1. 把预先生成的 WebM 测试文件作为 File/Blob 交给 Owlbear SDK；
+ * 2. 从 Owlbear 资产库重新选择已上传的测试资产，观察 SDK 返回的 URL/MIME/尺寸；
+ * 3. 尝试直接用浏览器 audio 元素播放 Owlbear 返回的资源 URL。
+ *
+ * 一旦这条链路被证明成立，后续才值得投入正式的音频库、Cue、Scene、Mixer 等 UI。
+ */
+
+const PROBES = {
+  audioOnly: {
+    path: "/probes/probe-audio-only.webm",
+    fileName: "owlbear-audio-probe-audio-only.webm",
+    displayName: "Owlbear Audio Probe - Audio Only",
+  },
+  tinyVideo: {
+    path: "/probes/probe-av.webm",
+    fileName: "owlbear-audio-probe-tiny-video.webm",
+    displayName: "Owlbear Audio Probe - Tiny Video + Opus",
+  },
+} as const;
+
+type ProbeKey = keyof typeof PROBES;
+
+type AssetInspection = {
+  name: string;
+  type: string;
+  mime: string;
+  width: number;
+  height: number;
+  url: string;
+  fetchStatus?: number;
+  contentType?: string | null;
+  contentLength?: string | null;
+  byteLength?: number;
+  fetchError?: string;
+};
+
+/**
+ * 把任意错误整理为稳定的文本。
+ * SDK、fetch 和浏览器媒体 API 都可能抛出不同类型的异常，统一处理便于测试记录。
+ */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
+}
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [ready, setReady] = useState(OBR.isReady);
+  const [busy, setBusy] = useState(false);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [inspection, setInspection] = useState<AssetInspection | null>(null);
+
+  /**
+   * Owlbear iframe 可能在 React 首次渲染后才完成 SDK 握手。
+   * onReady 返回取消订阅函数，因此直接交给 useEffect 清理。
+   */
+  useEffect(() => {
+    if (OBR.isReady) {
+      setReady(true);
+      return;
+    }
+
+    return OBR.onReady(() => {
+      setReady(true);
+      setLogLines((current) => [...current, "SDK ready：已连接 Owlbear Rodeo。"]);
+    });
+  }, []);
+
+  const audioUrl = useMemo(() => inspection?.url ?? "", [inspection]);
+
+  /**
+   * 将一条消息追加到页面日志。
+   * 时间只用于人工区分步骤，不参与任何同步逻辑。
+   */
+  function log(message: string) {
+    const time = new Date().toLocaleTimeString();
+    setLogLines((current) => [...current, `[${time}] ${message}`]);
+  }
+
+  /**
+   * 从 Vite 静态资源取回已经由 ffmpeg 生成的 WebM 探针，重新构造 File 后交给 Owlbear。
+   *
+   * 注意：官方文档也建议“读取原文件 -> 新建 File”，因为跨 iframe 传递原始 File 引用时
+   * 浏览器安全策略可能导致宿主无法继续读取文件。这里主动复制字节可以避免这类干扰。
+   */
+  async function uploadProbe(key: ProbeKey) {
+    if (!ready || busy) return;
+
+    const probe = PROBES[key];
+    setBusy(true);
+    log(`准备上传：${probe.displayName}`);
+
+    try {
+      const response = await fetch(probe.path);
+      if (!response.ok) {
+        throw new Error(`读取本地探针失败：HTTP ${response.status}`);
+      }
+
+      const bytes = await response.arrayBuffer();
+      const file = new File([bytes], probe.fileName, { type: "video/webm" });
+
+      log(`探针已读入浏览器：${file.size} bytes，MIME=${file.type}`);
+
+      const upload = buildImageUpload(file)
+        .name(probe.displayName)
+        .description("Owlbear Audio storage feasibility probe; safe to delete after testing.")
+        .build();
+
+      // ATTACHMENT 最接近“非地图、非 Token 的普通媒体附件”语义，避免污染地图/角色资产分类。
+      await OBR.assets.uploadImages([upload], "ATTACHMENT");
+      log("Owlbear uploadImages() 已返回。若资产选择/保存界面完成，则上传链路已走通。 ");
+    } catch (error) {
+      log(`上传失败：${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * 让 Owlbear 打开自己的资产选择器，再把选中的资产信息返回给扩展。
+   *
+   * 除了记录 SDK 给出的 MIME/尺寸/URL，这里还尝试 fetch 整个资源：
+   * - fetch 成功：说明扩展 iframe 对资产 URL 具备足够的 CORS 访问能力，可进一步做缓存/分析。
+   * - fetch 失败但 <audio> 能播：仍然可以使用 URL 做媒体播放，只是无法直接读原始字节。
+   */
+  async function inspectAsset() {
+    if (!ready || busy) return;
+
+    setBusy(true);
+    log("打开 Owlbear 资产选择器，准备回读测试资产……");
+
+    try {
+      const selected = await OBR.assets.downloadImages(
+        false,
+        "Owlbear Audio Probe",
+        "ATTACHMENT",
+      );
+
+      const asset: ImageDownload | undefined = selected[0];
+      if (!asset) {
+        log("没有选择资产。 ");
+        return;
+      }
+
+      const baseInspection: AssetInspection = {
+        name: asset.name,
+        type: asset.type,
+        mime: asset.image.mime,
+        width: asset.image.width,
+        height: asset.image.height,
+        url: asset.image.url,
+      };
+
+      // 暴露给浏览器自动化测试，便于 CDP 从 iframe 执行上下文中取回 CDN URL。
+      (window as Window & { __OWLBEAR_AUDIO_LAST_ASSET__?: AssetInspection }).__OWLBEAR_AUDIO_LAST_ASSET__ =
+        baseInspection;
+
+      setInspection(baseInspection);
+      log(
+        `已取回：${asset.name}；type=${asset.type}；mime=${asset.image.mime}；` +
+          `${asset.image.width}×${asset.image.height}`,
+      );
+
+      try {
+        const response = await fetch(asset.image.url);
+        const bytes = await response.arrayBuffer();
+        const detailed: AssetInspection = {
+          ...baseInspection,
+          fetchStatus: response.status,
+          contentType: response.headers.get("content-type"),
+          contentLength: response.headers.get("content-length"),
+          byteLength: bytes.byteLength,
+        };
+
+        (window as Window & { __OWLBEAR_AUDIO_LAST_ASSET__?: AssetInspection }).__OWLBEAR_AUDIO_LAST_ASSET__ =
+          detailed;
+        setInspection(detailed);
+        log(
+          `fetch 成功：HTTP ${response.status}；Content-Type=${detailed.contentType ?? "(none)"}；` +
+            `实际读取 ${bytes.byteLength} bytes。`,
+        );
+      } catch (error) {
+        const fetchError = errorMessage(error);
+        const detailed: AssetInspection = { ...baseInspection, fetchError };
+        (window as Window & { __OWLBEAR_AUDIO_LAST_ASSET__?: AssetInspection }).__OWLBEAR_AUDIO_LAST_ASSET__ =
+          detailed;
+        setInspection(detailed);
+        log(`资产 URL fetch 失败：${fetchError}`);
+      }
+    } catch (error) {
+      log(`回读失败：${errorMessage(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Owlbear Modal API 原生支持 fullScreen。
+   * 这里只验证“Action 小窗 -> 全屏工作台”的产品形态确实能由官方 SDK 直接实现。
+   */
+  async function openStudio() {
+    if (!ready) return;
+
+    try {
+      await OBR.modal.open({
+        id: "dev.zjhsteven.owlbear-audio/studio",
+        url: "/?view=studio",
+        fullScreen: true,
+      });
+      log("已请求打开全屏 Studio Modal。 ");
+    } catch (error) {
+      log(`打开全屏 Studio 失败：${errorMessage(error)}`);
+    }
+  }
+
+  const isStudio = new URLSearchParams(window.location.search).get("view") === "studio";
+
+  if (isStudio) {
+    return (
+      <main className="studio-probe">
+        <h1>Owlbear Audio · Full Studio</h1>
+        <p>
+          这是用于验证 Owlbear <code>fullScreen Modal</code> 的占位工作台。正式版本会在这里放置 Library、Cue
+          List、Scene Grid、Mixer、Deck 和 Inspector。
+        </p>
+        <div className="studio-grid" aria-label="future studio layout">
+          <section>Library</section>
+          <section>Cue / Scene Workspace</section>
+          <section>Inspector</section>
+          <section>Mixer / Decks</section>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <main className="probe-shell">
+      <header>
+        <h1>Owlbear Audio Lab</h1>
+        <p className={ready ? "status ready" : "status"}>
+          {ready ? "SDK 已连接" : "等待 Owlbear SDK……"}
+        </p>
+      </header>
+
+      <section className="probe-section">
+        <h2>1. WebM 存储探针</h2>
+        <p>先试纯 Opus 音轨 WebM；若失败，再试带 16×16 极低码率 VP9 视频轨的 WebM。</p>
+        <div className="button-stack">
+          <button disabled={!ready || busy} onClick={() => uploadProbe("audioOnly")}>
+            上传 Audio-only WebM
+          </button>
+          <button disabled={!ready || busy} onClick={() => uploadProbe("tinyVideo")}>
+            上传 Tiny-video WebM + Opus
+          </button>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
+      </section>
+
+      <section className="probe-section">
+        <h2>2. 回读与播放</h2>
+        <button disabled={!ready || busy} onClick={inspectAsset}>
+          从 Owlbear 资产库选择并检查
+        </button>
+
+        {inspection && (
+          <div className="inspection">
+            <dl>
+              <dt>Name</dt>
+              <dd>{inspection.name}</dd>
+              <dt>Asset type</dt>
+              <dd>{inspection.type}</dd>
+              <dt>MIME</dt>
+              <dd>{inspection.mime}</dd>
+              <dt>Dimensions</dt>
+              <dd>
+                {inspection.width} × {inspection.height}
+              </dd>
+              <dt>Fetched bytes</dt>
+              <dd>{inspection.byteLength ?? "未能读取"}</dd>
+            </dl>
+
+            <audio controls preload="metadata" src={audioUrl}>
+              当前浏览器无法播放该资源。
+            </audio>
+          </div>
+        )}
+      </section>
+
+      <section className="probe-section">
+        <h2>3. UI 容器能力</h2>
+        <button disabled={!ready} onClick={openStudio}>
+          打开全屏 Studio 验证页
         </button>
       </section>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
+      <section className="probe-section log-section">
+        <h2>日志</h2>
+        <pre>{logLines.length ? logLines.join("\n") : "尚未执行测试。"}</pre>
       </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    </main>
+  );
 }
 
-export default App
+export default App;
