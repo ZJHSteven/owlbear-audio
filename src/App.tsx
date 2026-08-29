@@ -87,6 +87,19 @@ function App() {
   const isBackground = view === "background";
 
   useEffect(() => {
+    if (!ready || isBackground) return;
+
+    const windowWithProbe = window as Window & {
+      __OWLBEAR_AUDIO_OPEN_ACTION__?: () => Promise<void>;
+    };
+    windowWithProbe.__OWLBEAR_AUDIO_OPEN_ACTION__ = () => OBR.action.open();
+
+    return () => {
+      delete windowWithProbe.__OWLBEAR_AUDIO_OPEN_ACTION__;
+    };
+  }, [isBackground, ready]);
+
+  useEffect(() => {
     if (!ready || !isBackground) return;
 
     return OBR.broadcast.onMessage(BACKGROUND_PROBE_CHANNEL, async (event) => {
