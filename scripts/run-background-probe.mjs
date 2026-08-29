@@ -72,47 +72,67 @@ async function clickPoint(client, x, y) {
 
 async function main() {
   let list = await targets();
-  const room = list.find(
-    (target) => target.type === "page" && target.id === "A278D02945F69A6AF56C37589E10EC2C",
-  ) ?? list.find(
+  const targetIdsBefore = new Set(list.map((target) => target.id));
+  const existingRoom = list.find(
     (target) => target.type === "page" && target.url.includes("owlbear.rodeo/room/") && target.title === "Owlbear Rodeo",
   );
+  if (!existingRoom) throw new Error("No Owlbear room target found");
 
-  if (!room) throw new Error("No Owlbear room target found");
+  // A new top-level browsing context is required because Chrome can preserve
+  // sticky user activation across ordinary reloads of an existing tab.
+  const freshRoom = await fetch(`${CDP}/json/new?${encodeURIComponent(existingRoom.url)}`, {
+    method: "PUT",
+  }).then((response) => response.json());
 
-  const roomClient = await connect(room);
+  const roomClient = await connect(freshRoom);
   await roomClient.send("Page.enable");
-  await roomClient.send("Page.reload", { ignoreCache: true });
-  await sleep(2500);
 
-  list = await targets();
-  const background = list.find(
-    (target) => target.type === "iframe" && target.url.startsWith("http://localhost:5199/") && target.url.includes("view=background"),
-  );
-  const action = list.find(
-    (target) => target.type === "iframe" && target.url.startsWith("http://localhost:5199/") && !target.url.includes("view=background"),
-  );
+  let freshLocalFrames = [];
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await sleep(500);
+    list = await targets();
+    freshLocalFrames = list.filter(
+      (target) =>
+        !targetIdsBefore.has(target.id) &&
+        target.type === "iframe" &&
+        target.url.startsWith("http://localhost:5199/"),
+    );
+    if (
+      freshLocalFrames.some((target) => target.url.includes("view=background")) &&
+      freshLocalFrames.some((target) => !target.url.includes("view=background"))
+    ) {
+      break;
+    }
+  }
+
+  const background = freshLocalFrames.find((target) => target.url.includes("view=background"));
+  const action = freshLocalFrames.find((target) => !target.url.includes("view=background"));
 
   if (!background || !action) {
-    throw new Error(`Missing runtime targets: background=${Boolean(background)} action=${Boolean(action)}`);
+    throw new Error(
+      `Missing runtime targets in fresh tab: background=${Boolean(background)} action=${Boolean(action)}`,
+    );
   }
 
   const backgroundClient = await connect(background);
   const actionClient = await connect(action);
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const coordinatorReady = await backgroundClient.evaluate(
+      `Boolean(window.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__)`,
+    );
+    if (coordinatorReady) break;
+    await sleep(100);
+  }
 
   const initialBackground = await backgroundClient.evaluate(`({
     activation: {
       isActive: navigator.userActivation.isActive,
       hasBeenActive: navigator.userActivation.hasBeenActive,
     },
-    probe: window.__OWLBEAR_AUDIO_BACKGROUND_PROBE__ ?? null,
+    snapshot: window.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__?.snapshot() ?? null,
     visibility: document.visibilityState,
   })`);
-
-  if (initialBackground.probe?.audio) {
-    await backgroundClient.evaluate(`window.__OWLBEAR_AUDIO_BACKGROUND_PROBE__.audio.pause()`);
-  }
-  await backgroundClient.evaluate(`delete window.__OWLBEAR_AUDIO_BACKGROUND_PROBE__`);
 
   // Opening the popover is intentionally programmatic: it must not provide user activation.
   // The only real gesture in this test is the subsequent CDP mouse click on the Action button.
@@ -130,42 +150,27 @@ async function main() {
   if (!probeButton || probeButton.disabled) throw new Error("Background probe button unavailable");
 
   await clickPoint(actionClient, probeButton.x, probeButton.y);
-  await sleep(1200);
+  await sleep(5000);
 
-  const after = await backgroundClient.evaluate(`(() => {
-    const probe = window.__OWLBEAR_AUDIO_BACKGROUND_PROBE__;
-    return {
-      activation: {
-        isActive: navigator.userActivation.isActive,
-        hasBeenActive: navigator.userActivation.hasBeenActive,
-      },
-      probe: probe ? {
-        nonce: probe.nonce,
-        receivedAt: probe.receivedAt,
-        started: probe.started,
-        currentTime: probe.audio.currentTime,
-        paused: probe.audio.paused,
-        readyState: probe.audio.readyState,
-        error: probe.error,
-      } : null,
-    };
-  })()`);
+  const after = await backgroundClient.evaluate(`({
+    activation: {
+      isActive: navigator.userActivation.isActive,
+      hasBeenActive: navigator.userActivation.hasBeenActive,
+    },
+    snapshot: window.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__?.snapshot() ?? null,
+  })`);
 
-  await sleep(1300);
-  const later = await backgroundClient.evaluate(`(() => {
-    const probe = window.__OWLBEAR_AUDIO_BACKGROUND_PROBE__;
-    return probe ? {
-      currentTime: probe.audio.currentTime,
-      paused: probe.audio.paused,
-      ended: probe.audio.ended,
-    } : null;
-  })()`);
+  await sleep(1800);
+  const later = await backgroundClient.evaluate(
+    `window.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__?.snapshot() ?? null`,
+  );
 
   console.log(JSON.stringify({ initialBackground, after, later }, null, 2));
 
   actionClient.close();
   backgroundClient.close();
   roomClient.close();
+  await fetch(`${CDP}/json/close/${freshRoom.id}`);
 }
 
 main().catch((error) => {

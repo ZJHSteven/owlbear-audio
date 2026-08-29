@@ -334,15 +334,15 @@ React + TypeScript + Vite。
 
 ### Phase 1 — Playback Core（进入当前阶段）
 
-- [ ] 建立 Asset / Clip / Cue / Bus / Scene 类型模型。
-- [ ] 建立单例 Web Audio / HTMLMediaElement playback runtime。
-- [ ] Music / Ambience / SFX / Master Bus gain graph。
-- [ ] preload / play / pause / stop / seek / loop range。
-- [ ] equal-power crossfade 与 gain ramp。
-- [ ] 验证 Action iframe 收起后的播放生命周期。
-- [ ] 增加 `background_url` coordinator probe，验证 autoplay / user-activation 边界。
-- [ ] 确定唯一 audio playback owner（优先验证 Background coordinator + Action Audio Host）。
-- [ ] 定义 Broadcast transport protocol 与 GM authoritative state。
+- [x] 建立 Asset / Clip / Cue / Bus / Scene 类型模型。
+- [x] 建立单例 Web Audio / HTMLMediaElement playback runtime。
+- [x] Music / Ambience / SFX / Voice / Master Bus gain graph。
+- [~] preload / play / pause / stop / seek / loop：基础 transport 与整轨 loop 已完成；任意 loop region 尚未实现。
+- [x] equal-power crossfade 与 gain ramp。
+- [x] 验证 Action iframe 收起后的播放生命周期：当前 Owlbear/Chrome 中 iframe 保留且媒体继续，但正式架构不依赖该行为。
+- [x] 增加 `background_url` 并完成 clean-room autoplay / user-activation 验证。
+- [x] 确定唯一 audio playback owner：**Background AudioEngine + Coordinator**；Action 只负责真实 gesture 和控制 UI。
+- [~] 定义 Broadcast transport protocol：LOCAL runtime RPC 已有 UNLOCK/PLAY/PAUSE/STOP/STOP_ALL/SEEK/SET_BUS_GAIN + ACK/snapshot；GM authoritative revision/timestamp 尚待实现。
 - [ ] player synchronization / reconnect / drift correction。
 
 ### Phase 2 — Library & Import

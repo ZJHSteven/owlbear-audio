@@ -24,13 +24,15 @@
   - 完成 `docs/PRODUCT-DESIGN.md`，正式固定 DJ / QLab / Ableton 三类范式与 Live / Director / Advanced 三层 UI 思路。
   - 完成 `docs/STORAGE-FORMAT.md`：固定单帧 VP9 + Opus、音频图标封面和 Collection 隔离策略。
   - 完成 `docs/SDK-UI-ARCHITECTURE.md`：确定 Action / Background / Modal / Tool Action / Popover / Context Menu / Tool Mode 的职责边界。
-- 正在做：**Phase 1 Playback Core 已开始。** 当前首先搭建统一数据模型和本地播放 runtime，并用真实 Owlbear 验证 Action iframe、background page 与浏览器 autoplay/user-activation 的生命周期边界。
+- 已完成 Phase 1 的关键运行时验证：**Background 已正式确定为唯一 Audio Host + local coordinator。** 全新 Room tab 初始 Background `userActivation=false/false`；Action 真实点击后经 LOCAL Broadcast，Background handler 内 `AudioEngine.unlock()` 成功令 `AudioContext=running`，随后 MUSIC channel 正常播放并 loop。
+- 已建立正式 runtime RPC 骨架：`BackgroundCoordinator` / `BackgroundClient` / `runtime/protocol.ts`，支持 UNLOCK、PLAY、PAUSE、STOP、STOP_ALL、SEEK、SET_BUS_GAIN 以及 ACK/snapshot。
+- 已建立可重复 clean-room CDP 回归脚本：每次新建独立 Owlbear Room tab，避免普通 reload 保留 sticky `hasBeenActive` 造成 autoplay 假阳性；测试完成自动关闭临时 tab。
 - 下一步：
-  1. 建立 Asset / Clip / Cue / Bus / Scene 类型与 transport state。
-  2. 建立 Music / Ambience / SFX / Master Web Audio graph 和 preload/play/pause/stop/seek/loop/crossfade 基础能力。
-  3. 实测 Action popover 收起后 Action iframe 是否持续播放，以及 reload/hidden 后恢复行为。
-  4. 增加 `background_url` coordinator probe，验证 user gesture 能否解锁 background audio；据此确定唯一 playback owner。
-  5. 再进入 Broadcast GM-authoritative transport、玩家同步和 CDN 长媒体 seek 测试。
+  1. 把 Action probe UI 收敛成真正的 Live Console：Play/Pause/Stop/Panic + Master/Music/Ambience gain。
+  2. 给 transport 增加 revision、authoritative timestamp、startedAt / pausedAt，为 GM→PLAYER 同步和漂移修正做准备。
+  3. 把双 Deck / preload / equal-power crossfade 串进 BackgroundCoordinator 的正式命令层。
+  4. 验证 CDN URL 跨 reload、跨玩家、跨会话稳定性，并决定 Library 索引保存 URL 还是 Owlbear asset identity。
+  5. 做玩家端首次 Enable Audio、断线重连和 sync recovery。
 
 ## 关键决策与理由（防止“吃书”）
 
@@ -42,7 +44,7 @@
 - 决策F：零后端优先，转码目标放在客户端；若使用 ffmpeg.wasm 必须按需懒加载。（原因：保持免费、易部署，同时避免临场控制台因大型 WASM 初始化变慢。）
 - 决策G：生产媒体使用 **1 个 64×64 VP9 封面帧 + 完整 Opus 的 WebM**，不再使用整首 1 fps 视频。（原因：Owlbear 只需要一帧生成 thumbnail，单帧成本 O(1)，且已经通过真实上传验证。）
 - 决策H：媒体资产默认放入专用 `Owlbear Audio` Collection，而不是追求无法人工恢复的“完全隐藏”。（原因：Default 保持干净；插件损坏时用户仍能从 Owlbear 原生 Asset Manager 清理数据。）
-- 决策I：UI 采用多 surface 组合：Action=Live Console，Full-screen Modal=Director/Studio，Tool Action=Scene 内极速 GO，Popover=Cue Cart；Background 先作为 coordinator，真实音频 owner 要等 autoplay 实验后决定。（原因：让每个 Owlbear 注入面做最擅长的事，同时保证只有一个播放 owner。）
+- 决策I：UI 采用多 surface 组合：Action=Live Console / 首次 Enable Audio，Full-screen Modal=Director/Studio，Tool Action=Scene 内极速 GO，Popover=Cue Cart；**Background=唯一 AudioEngine owner + local coordinator**。（原因：clean-room 真机实验已经证明 Action 的真实 gesture 可以通过 LOCAL Broadcast 解锁 Background 的 Web Audio；因此 UI 生命周期与 transport 生命周期可以彻底解耦。）
 
 ## 常见坑 / 复现方法
 

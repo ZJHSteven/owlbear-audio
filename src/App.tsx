@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import OBR, { buildImageUpload, type ImageDownload } from "@owlbear-rodeo/sdk";
+import { BackgroundClient } from "./runtime/BackgroundClient";
+import { BackgroundCoordinator } from "./runtime/BackgroundCoordinator";
 import "./App.css";
 
 /**
@@ -56,9 +58,8 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-const BACKGROUND_PROBE_CHANNEL = "dev.zjhsteven.owlbear-audio/background-probe";
-const BACKGROUND_PROBE_URL =
-  "https://videos.owlbear.rodeo/b29e977b-08e0-47ab-b1b3-a8084be49cdc/items/1335e7a5-fd8f-4335-b98a-e7e0fb95a079.webm";
+const BACKGROUND_PROBE_URL = "/probes/production/oneframe-icon-64-6s.webm";
+const backgroundClient = new BackgroundClient();
 
 function App() {
   const [ready, setReady] = useState(OBR.isReady);
@@ -102,34 +103,18 @@ function App() {
   useEffect(() => {
     if (!ready || !isBackground) return;
 
-    return OBR.broadcast.onMessage(BACKGROUND_PROBE_CHANNEL, async (event) => {
-      const data = event.data as { type?: string; nonce?: string } | null;
-      if (data?.type !== "play") return;
+    const coordinator = new BackgroundCoordinator();
+    coordinator.start();
 
-      const audio = new Audio(BACKGROUND_PROBE_URL);
-      audio.preload = "auto";
-      audio.loop = true;
+    const debugWindow = window as Window & {
+      __OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__?: BackgroundCoordinator;
+    };
+    debugWindow.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__ = coordinator;
 
-      const probe = {
-        nonce: data.nonce ?? "",
-        receivedAt: Date.now(),
-        started: false,
-        currentTime: 0,
-        error: "",
-        audio,
-      };
-
-      (window as Window & { __OWLBEAR_AUDIO_BACKGROUND_PROBE__?: typeof probe }).__OWLBEAR_AUDIO_BACKGROUND_PROBE__ =
-        probe;
-
-      try {
-        await audio.play();
-        probe.started = true;
-        probe.currentTime = audio.currentTime;
-      } catch (error) {
-        probe.error = errorMessage(error);
-      }
-    });
+    return () => {
+      coordinator.stop();
+      delete debugWindow.__OWLBEAR_AUDIO_BACKGROUND_COORDINATOR__;
+    };
   }, [isBackground, ready]);
 
   /**
@@ -265,14 +250,25 @@ function App() {
   async function runBackgroundProbe() {
     if (!ready) return;
 
-    const nonce = crypto.randomUUID();
-    log(`发送 LOCAL Background 播放探针：${nonce}`);
-    await OBR.broadcast.sendMessage(
-      BACKGROUND_PROBE_CHANNEL,
-      { type: "play", nonce },
-      { destination: "LOCAL" },
-    );
-    log("LOCAL Background 播放探针已发送。 ");
+    log("发送 PLAY → Background runtime；该点击同时承担首次音频解锁。 ");
+    try {
+      const response = await backgroundClient.play({
+        channelId: "probe-music",
+        url: BACKGROUND_PROBE_URL,
+        busId: "MUSIC",
+        loop: true,
+      });
+      if (!response.ok) {
+        log(`Background PLAY 被拒绝：${response.error ?? "unknown error"}`);
+        return;
+      }
+      log(
+        `Background PLAY ACK：context=${response.snapshot.contextState}；` +
+          `unlocked=${response.snapshot.isUnlocked}；channels=${response.snapshot.channels.length}`,
+      );
+    } catch (error) {
+      log(`Background PLAY 失败：${errorMessage(error)}`);
+    }
   }
 
   async function openStudio() {

@@ -178,7 +178,7 @@ Tool Mode 会成为 active mode，并收到 click / drag pointer events。
 
 ---
 
-## 9. Background page：协调器非常合适，播放 owner 尚需验证
+## 9. Background page：正式的本地播放 Owner + Coordinator
 
 Manifest 官方支持 `background_url`；官方 Custom Tool 教程也使用 background site 来常驻处理 SDK 通信。
 
@@ -194,20 +194,25 @@ Background 很适合承担：
 - Tool Action / Context Menu 注册
 - Compact / Modal / Popover 之间的状态桥
 
-### 但不要立刻假定 background 一定负责真实音频输出
+### Autoplay / user activation 已完成 Chrome 真机验证
 
-浏览器 autoplay / user activation 是关键变量。
+浏览器 autoplay / user activation 仍是硬约束：全新 Background iframe 在 `navigator.userActivation.hasBeenActive=false` 时直接 `play()` 会抛 `NotAllowedError`。
 
-本项目已经实测：在没有用户交互的扩展 iframe 中直接调用 `HTMLAudioElement.play()`，Chrome 会抛 `NotAllowedError`。
+但 clean-room 实验已经证明下面这条正式链路成立：
 
-所以必须单独验证：
+1. 新建全新的 Owlbear Room tab，Background 初始 `isActive=false / hasBeenActive=false`；
+2. Action 通过真实鼠标事件触发一次播放命令；
+3. Action 使用 `OBR.broadcast` 的 `LOCAL` destination 把命令发给 Background；
+4. Background 在自己的 handler 内执行 `AudioEngine.unlock()`；
+5. Background 的 `AudioContext` 成功进入 `running`，`isUnlocked=true`；
+6. 同一个 handler 随后创建/播放 MUSIC channel，`readyState=4`，播放时钟正常前进；
+7. Action 收起后 Background 播放继续；后续无需新的 transient activation 即可再启动媒体。
 
-1. 用户点击 Action 里的 `Enable Audio / Play`；
-2. 这个 gesture 是否能让同 origin 的 background iframe 获得后续播放权限；
-3. background 在 Action 关闭后是否能持续 Web Audio；
-4. 页面 reload / tab background / mobile 状态变化后会发生什么。
+因此桌面 Chromium 当前已可正式采用：
 
-在这些实验完成前，Background 的确定职责是 **coordinator**，而不是已经拍板的 audio engine。
+> **Action = 显式用户手势入口；Background = 唯一 Audio Host + Coordinator。**
+
+仍需后续兼容性测试：Firefox / Safari / iOS / 页面冻结 / 内存回收 / Room reconnect。
 
 ---
 
@@ -243,20 +248,18 @@ Background 很适合承担：
 - 首次 autoplay unlock 可能失败；
 - background iframe 的 media/audio lifecycle 需要真实浏览器验证。
 
-### 方案 C：Background 协调 + Action Audio Host
+### 最终优先方案：Background 是唯一 Audio Host
 
-这是当前最稳健的候选：
+当前桌面 Chrome / Owlbear 真机实验已经让方案 B 胜出：
 
-- Background：authoritative local coordinator；
-- Action iframe：实际 AudioContext / HTMLMediaElement owner；
-- Full Studio / Tool Action / Popover：控制器；
-- Action 第一次由用户手势显式解锁 AudioContext；
-- 收起 Action 后，如果 iframe 持续存在，音频继续；
-- Background 维护应该播放什么，如果 Action host 重建则快速恢复。
+- Background：唯一 `AudioEngine` owner + authoritative local coordinator；
+- Action：Live Console + 首次 user gesture / Enable Audio；
+- Full Studio / Tool Action / Popover：纯命令控制器；
+- LOCAL Broadcast：同一浏览器内 UI surface → Background RPC；
+- Background 回 ACK / snapshot，UI 不直接读取媒体节点；
+- Action popover 是否被关闭、React 是否重新渲染，都不影响 transport。
 
-这样即使 Action document 被浏览器回收，也只是 audio host 重建，而不是整个 show state 丢失。
-
-**当前优先验证方案 C。**
+Action iframe 关闭后不销毁、媒体可继续播放这一行为也被实测过，但它不再是架构前提，只作为容错余量。
 
 ---
 
@@ -361,8 +364,8 @@ Notification 只用于异常和需要用户处理的状态，不用来承担常�
 
 | Surface | 第一版职责 | 是否持续存在 | 是否依赖 Scene | 是否控制音频 |
 | --- | --- | --- | --- | --- |
-| Action | Live Console / Enable Audio / 主入口 | 需实测生命周期 | 否 | 是，候选 Audio Host |
-| Background | Sync / state / registrations | 是 | 否 | 暂定否，待 autoplay 验证 |
+| Action | Live Console / Enable Audio / 主入口 | 临时 UI；生命周期不再关键 | 否 | 发送命令，不持有 AudioEngine |
+| Background | AudioEngine / Sync / state / registrations | 是 | 否 | **唯一 Audio Host** |
 | Full-screen Modal | Director / Studio | 否 | 否 | 发送控制命令 |
 | Tool Action | GO / Devamp / Panic | 注册持续，UI 仅 Scene 时可见 | 是 | 发送命令 |
 | Popover | Cue Cart / Pads | 临时 | 否/可由 Tool Action 打开 | 发送命令 |
@@ -374,10 +377,10 @@ Notification 只用于异常和需要用户处理的状态，不用来承担常�
 
 ## 15. 第一版实现顺序
 
-1. Background coordinator skeleton。
-2. Action Audio Host + Live Console。
-3. 验证 user activation / autoplay / Action 收起后的连续播放。
-4. Broadcast transport protocol。
+1. Background coordinator + AudioEngine owner skeleton。✅
+2. Action → LOCAL Broadcast → Background runtime protocol。✅
+3. 验证 user activation / autoplay / Background 连续播放。✅（桌面 Chrome）
+4. Live Console transport controls。
 5. Full-screen Studio controller。
 6. 单个 Tool Action：`GO`。
 7. Action badge 状态。
