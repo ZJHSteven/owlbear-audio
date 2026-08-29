@@ -4,6 +4,7 @@
   "manifest_version": 1,
   "description": "Owlbear Rodeo audio storage and playback experiment",
   "author": "ZJHSteven",
+  "background_url": "/?view=background",
   "action": {
     "title": "Owlbear Audio Lab",
     "icon": "/favicon.svg",
