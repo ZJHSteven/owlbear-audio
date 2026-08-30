@@ -4,6 +4,7 @@ import {
   RUNTIME_EVENT_CHANNEL,
   type RuntimeCommandInput,
   type RuntimeEvent,
+  type RuntimePlan,
   type RuntimeSnapshot,
 } from "./protocol";
 
@@ -56,6 +57,18 @@ export class BackgroundClient {
 
   snapshot(): Promise<RuntimeResponse> {
     return this.send({ type: "GET_SNAPSHOT" });
+  }
+
+  loadPlan(plan: RuntimePlan): Promise<RuntimeResponse> {
+    return this.send({ type: "LOAD_PLAN", plan });
+  }
+
+  go(): Promise<RuntimeResponse> {
+    return this.send({ type: "GO" });
+  }
+
+  setHold(hold: boolean): Promise<RuntimeResponse> {
+    return this.send({ type: "SET_HOLD", hold });
   }
 
   unlock(): Promise<RuntimeResponse> {

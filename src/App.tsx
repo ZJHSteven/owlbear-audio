@@ -3,6 +3,7 @@ import OBR, { buildImageUpload, type ImageDownload } from "@owlbear-rodeo/sdk";
 import { BackgroundClient } from "./runtime/BackgroundClient";
 import { BackgroundCoordinator } from "./runtime/BackgroundCoordinator";
 import { LiveConsole } from "./ui/LiveConsole";
+import { StudioShell } from "./ui/StudioShell";
 import "./App.css";
 
 /**
@@ -295,21 +296,7 @@ function App() {
   }
 
   if (isStudio) {
-    return (
-      <main className="studio-probe">
-        <h1>Owlbear Audio · Full Studio</h1>
-        <p>
-          这是用于验证 Owlbear <code>fullScreen Modal</code> 的占位工作台。正式版本会在这里放置 Library、Cue
-          List、Scene Grid、Mixer、Deck 和 Inspector。
-        </p>
-        <div className="studio-grid" aria-label="future studio layout">
-          <section>Library</section>
-          <section>Cue / Scene Workspace</section>
-          <section>Inspector</section>
-          <section>Mixer / Decks</section>
-        </div>
-      </main>
-    );
+    return <StudioShell ready={ready} />;
   }
 
   if (!isStorageProbe) {

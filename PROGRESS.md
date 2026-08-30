@@ -27,14 +27,17 @@
 - 已完成 Phase 1 的关键运行时验证：**Background 已正式确定为唯一 Audio Host + local coordinator。** 全新 Room tab 初始 Background `userActivation=false/false`；Action 真实点击后经 LOCAL Broadcast，Background handler 内 `AudioEngine.unlock()` 成功令 `AudioContext=running`，随后 MUSIC channel 正常播放并 loop。
 - 已建立正式 runtime RPC 骨架：`BackgroundCoordinator` / `BackgroundClient` / `runtime/protocol.ts`，支持 UNLOCK、PLAY、PAUSE、STOP、STOP_ALL、SEEK、SET_BUS_GAIN 以及 ACK/snapshot。
 - 已建立可重复 clean-room CDP 回归脚本：每次新建独立 Owlbear Room tab，避免普通 reload 保留 sticky `hasBeenActive` 造成 autoplay 假阳性；测试完成自动关闭临时 tab。
-- Action 默认页已经从 Storage Probe 切换为 Phase 1 **Live Console**：Enable Audio、Play、Pause、Stop、PANIC、Master/Music/Ambience gain 均通过 `BackgroundClient` 控制；Storage Probe 保留在独立 diagnostics view。
-- 新增 `GET_SNAPSHOT`：Action iframe 即使独立 reload，也能从 Background 恢复 `Audio Ready`、当前 channel 的 Playing/Paused 状态和 Bus gain；真机回归已确认播放不中断且新 Action 的 Pause 按钮可立即使用。
+- Action 已按 **Live UX** 重构为 NOW / NEXT / GO / HOLD / PANIC：首次没有节目时只给 `Try Demo` / `Open Studio` 两条明确路径；播放器式 Pause 与 Levels 退居第二层。Action iframe reload 后仍从 Background 自动恢复 NOW、NEXT、Pause 和 Bus gain。
+- 新增 `docs/UX-FLOWS.md`，把 First Run / Prepare / Live 的用户旅程和验收标准固定下来；明确 UI 必须服务于任务流，而不是把内部 Asset/Clip/Deck 参数平铺给用户。
+- Full-screen Studio 已从占位框升级为第一版真实 Director workflow：`1·FIND Library → 2·BUILD Cue Stack → 3·TUNE Inspector`。可从 Owlbear Asset Picker 选择多个 WebM 音频、加入本地 Library、`+ Cue`、排序/删除、编辑 Bus/Fade/Gain/Loop，再 `Arm for Live`。
+- Runtime protocol 已加入 `RuntimePlan / LOAD_PLAN / GO / SET_HOLD`；Transport snapshot 现在包含 revision、plan、NOW、NEXT、cursor。真实 UX 回归已验证 `Studio → Arm → Enter Live → Action NEXT → GO` 全链路。
+- 修正一个关键现场语义：Arm 新节目不会把正在播放的 NOW 从状态模型里抹掉；NOW 独立于新 Plan，第一条新 Cue 只成为 NEXT，GO 时才从现场 NOW 转入新节目。
 - 下一步：
-  1. 给 transport 增加 revision、authoritative timestamp、startedAt / pausedAt，为 GM→PLAYER 同步和漂移修正做准备。
-  2. 将 Live Console 从 runtime test media 改成真正的 Library/Cue 当前项，并加入 GO / NEXT / DEVAMP 状态。
-  3. 把双 Deck / preload / equal-power crossfade 串进 BackgroundCoordinator 的正式命令层。
-  4. 验证 CDN URL 跨 reload、跨玩家、跨会话稳定性，并决定 Library 索引保存 URL 还是 Owlbear asset identity。
-  5. 做玩家端首次 Enable Audio、断线重连和 sync recovery。
+  1. 给 GM transport 增加 authoritative timestamp / startedAt / pausedAt，并建立 REMOTE broadcast 状态流。
+  2. 做 PLAYER 极简 UX：首次 Enable Audio、只读 NOW、Local Master/Mute、blocked/reconnect 提示。
+  3. 实现 player synchronization / reconnect / drift correction，并用双 tab GM/PLAYER 真机回归。
+  4. 验证真实 Owlbear Asset Picker → Studio Library 的完整 UI 路径和 CDN URL 跨玩家稳定性。
+  5. 客户端转码导入 + IndexedDB Library；随后补 Scene / Devamp / preload 与高级 Deck。
 
 ## 关键决策与理由（防止“吃书”）
 

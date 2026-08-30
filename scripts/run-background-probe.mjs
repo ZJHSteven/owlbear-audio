@@ -141,13 +141,13 @@ async function main() {
 
   const probeButton = await actionClient.evaluate(`(() => {
     const button = [...document.querySelectorAll('button')]
-      .find((element) => element.textContent?.includes('▶ Play'));
+      .find((element) => element.textContent?.includes('Try Demo'));
     if (!button) return null;
     const rect = button.getBoundingClientRect();
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, disabled: button.disabled };
   })()`);
 
-  if (!probeButton || probeButton.disabled) throw new Error("Background probe button unavailable");
+  if (!probeButton || probeButton.disabled) throw new Error("Try Demo button unavailable");
 
   await clickPoint(actionClient, probeButton.x, probeButton.y);
   await sleep(5000);
@@ -191,12 +191,12 @@ async function main() {
 
   const playAgain = await actionClient.evaluate(`(() => {
     const button = [...document.querySelectorAll('button')]
-      .find((element) => element.textContent?.includes('▶ Play'));
+      .find((element) => element.textContent?.includes('▶ Resume'));
     if (!button) return null;
     const rect = button.getBoundingClientRect();
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, disabled: button.disabled };
   })()`);
-  if (!playAgain || playAgain.disabled) throw new Error("Play button unavailable after pause");
+  if (!playAgain || playAgain.disabled) throw new Error("Resume button unavailable after pause");
   await clickPoint(actionClient, playAgain.x, playAgain.y);
   await sleep(350);
 

@@ -342,9 +342,11 @@ React + TypeScript + Vite。
 - [x] 验证 Action iframe 收起后的播放生命周期：当前 Owlbear/Chrome 中 iframe 保留且媒体继续，但正式架构不依赖该行为。
 - [x] 增加 `background_url` 并完成 clean-room autoplay / user-activation 验证。
 - [x] 确定唯一 audio playback owner：**Background AudioEngine + Coordinator**；Action 只负责真实 gesture 和控制 UI。
-- [~] 定义 Broadcast transport protocol：LOCAL runtime RPC 已有 GET_SNAPSHOT/UNLOCK/PLAY/PAUSE/STOP/STOP_ALL/SEEK/SET_BUS_GAIN + ACK/snapshot；GM authoritative revision/timestamp 尚待实现。
-- [x] Action Live Console 基础 transport：Enable Audio / Play / Pause / Stop / PANIC + Master/Music/Ambience gain；Action 独立 reload 后可从 Background snapshot 恢复状态。
-- [ ] player synchronization / reconnect / drift correction。
+- [~] 定义 Broadcast transport protocol：LOCAL runtime RPC 已有 GET_SNAPSHOT/UNLOCK/PLAY/PAUSE/STOP/STOP_ALL/SEEK/SET_BUS_GAIN/LOAD_PLAN/GO/SET_HOLD + ACK/snapshot；GM authoritative revision/timestamp 尚待实现。
+- [x] Action Live UX：NOW / NEXT / GO / HOLD / PANIC 为一级；首次 Try Demo / Open Studio；Pause 与三路 Levels 退到第二层；Action reload 后从 Background 恢复。
+- [x] Full-screen Director 第一版：FIND Library → BUILD Cue Stack → TUNE Inspector；支持 Owlbear Asset Picker、多选 Library、+Cue、排序/删除、Bus/Fade/Gain/Loop、Arm for Live、Studio/Action GO。
+- [x] 固化 `docs/UX-FLOWS.md` 并建立 `run-ux-flow-probe.mjs` 真实用户旅程回归。
+- [ ] GM→PLAYER authoritative broadcast / player synchronization / reconnect / drift correction。
 
 ### Phase 2 — Library & Import
 

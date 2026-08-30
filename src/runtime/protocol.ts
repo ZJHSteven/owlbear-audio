@@ -3,10 +3,41 @@ import type { BusId } from "../core/types";
 export const RUNTIME_COMMAND_CHANNEL = "dev.zjhsteven.owlbear-audio/runtime-command";
 export const RUNTIME_EVENT_CHANNEL = "dev.zjhsteven.owlbear-audio/runtime-event";
 
+export interface RuntimePlayCue {
+  id: string;
+  name: string;
+  type: "PLAY";
+  url: string;
+  busId: Exclude<BusId, "MASTER">;
+  gainDb?: number;
+  loop?: boolean;
+  fadeSeconds?: number;
+}
+
+export interface RuntimePlan {
+  id: string;
+  name: string;
+  cues: RuntimePlayCue[];
+}
+
 export type RuntimeCommand =
   | {
       id: string;
       type: "GET_SNAPSHOT";
+    }
+  | {
+      id: string;
+      type: "LOAD_PLAN";
+      plan: RuntimePlan;
+    }
+  | {
+      id: string;
+      type: "GO";
+    }
+  | {
+      id: string;
+      type: "SET_HOLD";
+      hold: boolean;
     }
   | {
       id: string;
@@ -56,6 +87,16 @@ export type RuntimeCommandInput = WithoutId<RuntimeCommand>;
 export interface RuntimeSnapshot {
   contextState: AudioContextState | "UNINITIALIZED";
   isUnlocked: boolean;
+  transport: {
+    revision: number;
+    planId?: string;
+    planName?: string;
+    held: boolean;
+    currentIndex: number;
+    nextIndex: number;
+    currentCue?: RuntimePlayCue;
+    nextCue?: RuntimePlayCue;
+  };
   busGainsDb: Record<BusId, number>;
   channels: Array<{
     id: string;
