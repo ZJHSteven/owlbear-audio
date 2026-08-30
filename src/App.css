@@ -278,6 +278,151 @@ button:disabled {
   background: transparent;
 }
 
+/* ---------------- Player Console ---------------- */
+
+.player-shell {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  padding: 14px;
+  text-align: left;
+}
+
+.player-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.player-header h1 {
+  margin: 1px 0 0;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.player-now-card,
+.player-volume-card {
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--code-bg);
+}
+
+.player-now-card strong {
+  color: var(--text-h);
+  font-size: 16px;
+}
+
+.player-now-card small,
+.player-volume-card small,
+.player-status,
+.player-footer {
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.player-enable {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 72px;
+  margin-top: 10px;
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.player-enable small {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.player-volume-card {
+  margin-top: 10px;
+}
+
+.player-volume-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.player-volume-heading > div {
+  display: grid;
+}
+
+.player-volume-heading strong {
+  color: var(--text-h);
+  font-size: 12px;
+}
+
+.player-mute {
+  width: auto;
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 10px;
+}
+
+.player-mute.active {
+  border-color: #b45309;
+  color: #b45309;
+}
+
+.player-volume-slider {
+  display: grid;
+  grid-template-columns: 34px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 9px;
+}
+
+.player-volume-slider input {
+  width: 100%;
+}
+
+.player-volume-slider span:last-child {
+  text-align: right;
+}
+
+.player-status {
+  min-height: 28px;
+  padding: 9px 2px;
+}
+
+.player-footer {
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+
+.role-loading,
+.role-blocked-shell {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  padding: 20px;
+  color: var(--text);
+  text-align: left;
+}
+
+.role-blocked-shell strong {
+  color: var(--text-h);
+}
+
+.role-blocked-shell p {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
 /* ---------------- Director / Studio ---------------- */
 
 .studio-shell {

@@ -4,6 +4,7 @@ import { BackgroundClient } from "./runtime/BackgroundClient";
 import { BackgroundCoordinator } from "./runtime/BackgroundCoordinator";
 import { LiveConsole } from "./ui/LiveConsole";
 import { StudioShell } from "./ui/StudioShell";
+import { PlayerConsole } from "./ui/PlayerConsole";
 import "./App.css";
 
 /**
@@ -65,6 +66,7 @@ const backgroundClient = new BackgroundClient();
 
 function App() {
   const [ready, setReady] = useState(OBR.isReady);
+  const [role, setRole] = useState<"GM" | "PLAYER" | null>(null);
   const [busy, setBusy] = useState(false);
   const [logLines, setLogLines] = useState<string[]>([]);
   const [inspection, setInspection] = useState<AssetInspection | null>(null);
@@ -84,6 +86,19 @@ function App() {
       setLogLines((current) => [...current, "SDK ready：已连接 Owlbear Rodeo。"]);
     });
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    void OBR.player.getRole().then((nextRole) => {
+      if (!cancelled) setRole(nextRole);
+    });
+    const unsubscribe = OBR.player.onChange((player) => setRole(player.role));
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [ready]);
 
   const audioUrl = useMemo(() => inspection?.url ?? "", [inspection]);
   const view = new URLSearchParams(window.location.search).get("view");
@@ -296,10 +311,20 @@ function App() {
   }
 
   if (isStudio) {
+    if (role === "PLAYER") {
+      return (
+        <main className="role-blocked-shell">
+          <strong>Studio is controlled by the GM.</strong>
+          <p>Players only need Room Audio and their own local volume.</p>
+        </main>
+      );
+    }
     return <StudioShell ready={ready} />;
   }
 
   if (!isStorageProbe) {
+    if (role === "PLAYER") return <PlayerConsole ready={ready} />;
+    if (role === null) return <main className="role-loading">Connecting room audio…</main>;
     return <LiveConsole ready={ready} />;
   }
 

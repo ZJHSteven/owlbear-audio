@@ -32,12 +32,16 @@
 - Full-screen Studio 已从占位框升级为第一版真实 Director workflow：`1·FIND Library → 2·BUILD Cue Stack → 3·TUNE Inspector`。可从 Owlbear Asset Picker 选择多个 WebM 音频、加入本地 Library、`+ Cue`、排序/删除、编辑 Bus/Fade/Gain/Loop，再 `Arm for Live`。
 - Runtime protocol 已加入 `RuntimePlan / LOAD_PLAN / GO / SET_HOLD`；Transport snapshot 现在包含 revision、plan、NOW、NEXT、cursor。真实 UX 回归已验证 `Studio → Arm → Enter Live → Action NEXT → GO` 全链路。
 - 修正一个关键现场语义：Arm 新节目不会把正在播放的 NOW 从状态模型里抹掉；NOW 独立于新 Plan，第一条新 Cue 只成为 NEXT，GO 时才从现场 NOW 转入新节目。
+- GM→PLAYER 同步已经落地：REMOTE 只广播当前公开的 NOW/phase/position/revision，不包含 NEXT/Cue Stack；PLAYER 首次 Enable Audio 后自动 seek 到 authoritative clock，不需要手工 Sync。
+- PLAYER 极简 Console 已接入：只显示 NOW、同步/阻塞状态、本机音量和 Mute，不暴露 GM 的 GO/NEXT/Studio/私密编排。
+- 双 tab 真机回归已覆盖 heartbeat、Pause、Resume、PANIC 与 A/B crossfade；REMOTE channel 按 Cue id 唯一，latest-wins 队列阻止陈旧 async state 反向覆盖，网络迟到时 position 与剩余 fade 时长都按 elapsed 补偿。
+- Late join 已加入 Room metadata 公开 checkpoint：玩家初始化先读持久 NOW，再用 Broadcast/heartbeat 追实时状态。GM 已播放两个完整 loop 后新玩家加入，未解锁前即可看到 NOW；解锁后与 GM 实测漂移约 80 ms。185 秒 synthetic loop 时间解析数学回归误差为 0。
 - 下一步：
-  1. 给 GM transport 增加 authoritative timestamp / startedAt / pausedAt，并建立 REMOTE broadcast 状态流。
-  2. 做 PLAYER 极简 UX：首次 Enable Audio、只读 NOW、Local Master/Mute、blocked/reconnect 提示。
-  3. 实现 player synchronization / reconnect / drift correction，并用双 tab GM/PLAYER 真机回归。
-  4. 验证真实 Owlbear Asset Picker → Studio Library 的完整 UI 路径和 CDN URL 跨玩家稳定性。
-  5. 客户端转码导入 + IndexedDB Library；随后补 Scene / Devamp / preload 与高级 Deck。
+  1. 客户端转码导入 + IndexedDB Library：本地音频 → Opus + 单帧 VP9 WebM envelope → Owlbear Audio Collection。
+  2. 验证真实 Owlbear Asset Picker → Studio Library 的完整 UI 路径和 CDN URL 跨玩家/跨会话稳定性。
+  3. Scene / Layer 与 Devamp / Loop Region，继续保持 Live UX 的 GO/EXIT LOOP 一击操作。
+  4. Firefox/Safari/mobile 的 autoplay、background iframe 与媒体生命周期兼容测试。
+  5. 再补 Cue Cart、Tool Action GO 与高级 Deck/Inspector。
 
 ## 关键决策与理由（防止“吃书”）
 

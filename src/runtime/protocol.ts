@@ -89,6 +89,7 @@ export interface RuntimeSnapshot {
   isUnlocked: boolean;
   transport: {
     revision: number;
+    phase: "IDLE" | "PLAYING" | "PAUSED" | "STOPPED";
     planId?: string;
     planName?: string;
     held: boolean;
