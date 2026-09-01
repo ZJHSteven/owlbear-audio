@@ -11,6 +11,39 @@
 - 高级模式：完整暴露 Deck / Mixer / Cue / Loop / Bus / Automation 等控制，不限制高级用户。
 - 三种模式必须共用同一套底层数据模型，不能做成互相割裂的两套播放器。
 
+## v0.1 发布冻结范围（2026-09-01）
+
+第一版不再尝试同时交付完整 Show Control。目标先对标 Tracks 的“轻量音乐库 + 同步播放”，但把外部公网 URL 托管改成 **本地导入后存进 Owlbear 自己的资产空间**。
+
+### 唯一用户入口
+
+- **Action Popover 是唯一可见入口**。
+- `background_url` 只运行 AudioEngine / 房间同步，永远不作为用户页面。
+- v0.1 不提供 Studio Modal、Tool、Context Menu 或额外网页入口。
+
+### GM v0.1 用户路线
+
+`打开 Action → 音乐库 → 从电脑导入 → 浏览器转 Opus/WebM → Owlbear 原生保存 → 完成导入 → 搜索 → 播放/暂停/停止/音量`
+
+- 音乐默认循环，适合背景音乐与环境音。
+- 切换音乐使用短 equal-power crossfade。
+- 音乐库索引保存在本机；云端原文件保存在 Owlbear Audio Collection。换设备时可通过“添加已有音频”重新建立本机索引。
+
+### PLAYER v0.1 用户路线
+
+`打开 Action → 看当前音乐 → 若浏览器要求则点一次启用声音 → 自动跟随 GM → 调自己的音量/静音`
+
+### v0.1 明确不做
+
+- Cue Stack / GO / HOLD / PANIC 产品 UI。
+- Scene / Layer。
+- Devamp / Loop Region。
+- Cue Cart / SFX Pads。
+- Private Audition。
+- Deck A/B、Waveform、Hot Cue、EQ/Filter/FX、Automation。
+
+这些能力继续保留在长期产品方向，但必须在 v0.1 发布后逐项作为真实用户功能实现，不再用类型模型或占位 UI 计为“已完成”。
+
 ---
 
 ## 已验证事实
@@ -332,31 +365,40 @@ React + TypeScript + Vite。
 - [x] 生产存储规格落盘至 `docs/STORAGE-FORMAT.md`。
 - [x] SDK UI surface 职责落盘至 `docs/SDK-UI-ARCHITECTURE.md`。
 
-### Phase 1 — Playback Core（进入当前阶段）
+### Phase 1 — Playback Foundation（底层已较完整，产品功能仍不完整）
 
-- [x] 建立 Asset / Clip / Cue / Bus / Scene 类型模型。
-- [x] 建立单例 Web Audio / HTMLMediaElement playback runtime。
-- [x] Music / Ambience / SFX / Voice / Master Bus gain graph。
-- [~] preload / play / pause / stop / seek / loop：基础 transport 与整轨 loop 已完成；任意 loop region 尚未实现。
-- [x] equal-power crossfade 与 gain ramp。
-- [x] 验证 Action iframe 收起后的播放生命周期：当前 Owlbear/Chrome 中 iframe 保留且媒体继续，但正式架构不依赖该行为。
-- [x] 增加 `background_url` 并完成 clean-room autoplay / user-activation 验证。
-- [x] 确定唯一 audio playback owner：**Background AudioEngine + Coordinator**；Action 只负责真实 gesture 和控制 UI。
-- [x] 定义 Broadcast transport protocol：LOCAL runtime RPC 已有 GET_SNAPSHOT/UNLOCK/PLAY/PAUSE/STOP/STOP_ALL/SEEK/SET_BUS_GAIN/LOAD_PLAN/GO/SET_HOLD + ACK/snapshot；GM authoritative revision/timestamp、REMOTE NOW state 与 Room metadata checkpoint 已完成。
-- [x] Action Live UX：NOW / NEXT / GO / HOLD / PANIC 为一级；首次 Try Demo / Open Studio；Pause 与三路 Levels 退到第二层；Action reload 后从 Background 恢复。
-- [x] Full-screen Director 第一版：FIND Library → BUILD Cue Stack → TUNE Inspector；支持 Owlbear Asset Picker、多选 Library、+Cue、排序/删除、Bus/Fade/Gain/Loop、Arm for Live、Studio/Action GO。
-- [x] 固化 `docs/UX-FLOWS.md` 并建立 `run-ux-flow-probe.mjs` 真实用户旅程回归。
-- [x] GM→PLAYER authoritative broadcast / player synchronization / late-join recovery / heartbeat drift correction；双 tab 已验证 Pause/Resume/PANIC、loop 晚加入和双 channel crossfade。
-- [x] Player Console：仅 NOW / Enable Audio / Local Master / Mute / sync state，不暴露 NEXT/Cue Stack。
+- [x] Asset / Clip / Cue / Bus / Scene **类型模型**。注意：类型存在不代表对应用户功能已实现。
+- [x] 单例 Web Audio / HTMLMediaElement playback runtime。
+- [x] Music / Ambience / SFX / Voice / Master Bus graph。
+- [~] 基础 play / pause / stop / seek / 整轨 loop；任意 Loop Region 未实现。
+- [x] equal-power crossfade / gain ramp primitive。
+- [x] Background 为唯一 AudioEngine owner；Action gesture 解锁与 lifecycle 已验证。
+- [x] LOCAL runtime RPC + GM→PLAYER NOW 同步 / late join / heartbeat / Room metadata checkpoint。
+- [~] Live Console：NOW / NEXT / GO / HOLD / PANIC 只能驱动 **PLAY-only Cue Stack**，不能等同完整 Show Control。
+- [~] Studio：当前只有最小 Library + PLAY Cue Stack + 简单 Inspector，不是完整 Director。
+- [x] Player Console：Enable Audio / NOW / 本机音量 / Mute / sync state。
+- [ ] Scene + Layer runtime / UI。
+- [ ] DEVAMP / Exit Loop。
+- [ ] Cue Cart / Pads。
+- [ ] GM private Audition / Cue Bus。
+- [ ] Wait / Group / Random / Follow Action runtime。
+- [ ] Tool Action GO。
 
-### Phase 2 — Library & Import
+### Phase 2 — Library & Import（基础设施进行中，产品 UX 需重做）
 
-- 拖放导入。
-- 客户端转 Opus/WebM。
-- 码率预设：Speech / Ambience / Music / Archive。
-- loudness normalization。
-- metadata / tags / search。
-- Owlbear asset upload / recovery。
+- [~] 本地导入：文件选择/拖放已接到底层管线；完整正常用户流程尚未验收。
+- [x] Mediabunny + WebCodecs → 48 kHz Opus + 单个 64×64 VP9 cover frame；lazy-load。
+- [x] Speech 48 / Ambience 64 / Music 96 / Archive 128 kbps presets。
+- [x] production WebM SHA-256 去重；当前 Chrome/Mediabunny 下 deterministic。
+- [x] IndexedDB Local-only staging / recovery。
+- [x] Owlbear production envelope 上传的 WebM POST 200 + thumbnail POST 200 + `user_assets` POST 201 已独立验证。
+- [~] Asset Picker / Link 技术桥已验证；最终导入旅程仍需重新设计与完整登录态 E2E。
+- [x] 多标签页 picker broker 隔离基础设施。
+- [~] Loudness analyzer 基础设施已写；尚未达到用户功能验收标准。
+- [~] 搜索只有名称 substring；无 tags / category / library management。
+- [ ] 素材试听 / private preview。
+- [ ] 导入 UX 隐藏 Local-only / Link / WebM 等内部概念。
+- [x] 导入链路技术规格落盘至 `docs/IMPORT-PIPELINE.md`。
 
 ### Phase 3 — DM Workflow
 

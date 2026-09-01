@@ -1,13 +1,14 @@
 {
-  "name": "Owlbear Audio Lab",
-  "version": "0.0.2",
+  "name": "Owlbear Audio",
+  "version": "0.1.0",
   "manifest_version": 1,
-  "description": "Owlbear Rodeo audio storage and playback experiment",
+  "description": "Import local audio into Owlbear storage, search your library and play synchronized looping music.",
   "author": "ZJHSteven",
+  "icon": "/icon.svg",
   "background_url": "/?view=background",
   "action": {
-    "title": "Owlbear Audio Lab",
-    "icon": "/favicon.svg",
+    "title": "Owlbear Audio",
+    "icon": "/icon.svg",
     "popover": "/",
     "height": 620,
     "width": 420
