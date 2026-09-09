@@ -11,8 +11,11 @@
 - 已完成：顺序 / 单曲循环 / 列表循环 / 随机四种模式已经是 Background 的真实状态机行为。
 - 已完成：新增 `roomLibrary.ts`，以紧凑元组把名称、Owlbear CDN URL、分类、时长、码率、group/tags 等小索引写入房间 metadata；写入前按整个 metadata 的 UTF-8 JSON 大小检查 16 KiB 上限。
 - 已完成：GM Action 初始化时，房间没有 library metadata 才把旧 localStorage 自动迁移进去；房间已有索引后，房间成为权威源并通过 `onMetadataChange` 实时覆盖电脑/手机缓存。
-- 正在做：在真实房间完成旧电脑库迁移、清空本机缓存后的再读取测试，以及 GM→PLAYER 双端播放 E2E。
-- 下一步：建立持久 PLAYER 浏览器 profile，避免每次无痕窗口重新接受条款；真实双端 E2E 通过后再决定 v0.2。
+- 已完成：真实生产房间验证旧电脑 1 首曲目自动迁移到 Room metadata；随后手工删除 Action iframe 的 localStorage 缓存并刷新，曲目仍从房间索引自动恢复，证明“新设备本地空缓存”链路成立。
+- 已完成：建立持久 PLAYER Chrome profile `D:\Workspace\BrowserProfiles\OwlbearPlayer`，已作为访客加入真实房间并由 GM 批准，不再依赖 Incognito。
+- 正在修复：真实 PLAYER 点开 Action 后仍停在顶层“正在连接”；App 层已加入 `OBR.isReady + onReady` 双保险、首次 `getRole()` 重试以及 `window.__OWLBEAR_AUDIO_DIAGNOSTICS__` 诊断状态。
+- 正在做：发布握手修复并继续 GM→PLAYER 双端播放 E2E。
+- 下一步：真实双端 E2E 通过后再决定 v0.2。
 
 ## 第一阶段产品路线
 
