@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "owlbear-audio",
+  "compatibility_date": "2026-09-09",
+  "assets": {
+    "directory": "./dist"
+  },
+  "routes": [
+    {
+      "pattern": "owlbear-audio.zjhstudio.com",
+      "custom_domain": true
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 {
   "name": "Owlbear Audio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "manifest_version": 1,
-  "description": "Import local audio into Owlbear storage, search your library and play synchronized looping music.",
+  "description": "Import local audio into Owlbear storage, organize it by category and run synchronized room playback from one Action.",
   "author": "ZJHSteven",
   "icon": "/icon.svg",
   "background_url": "/?view=background",
