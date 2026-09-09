@@ -6,6 +6,7 @@ import {
   isRuntimeCommand,
   type RuntimeCommand,
   type RuntimeEvent,
+  type RuntimePlaybackMode,
   type RuntimePlan,
   type RuntimePlayCue,
   type RuntimeSnapshot,
@@ -36,7 +37,7 @@ type PlaybackPhase = RuntimeSnapshot["transport"]["phase"];
  * 但不会广播 NEXT、Cue Stack 或其他 GM 私密编排信息。
  */
 export class BackgroundCoordinator {
-  private readonly engine = new AudioEngine();
+  private readonly engine: AudioEngine;
   private runtimeUnsubscribe: (() => void) | null = null;
   private syncUnsubscribe: (() => void) | null = null;
   private playerUnsubscribe: (() => void) | null = null;
@@ -56,6 +57,7 @@ export class BackgroundCoordinator {
   private plan: RuntimePlan | null = null;
   private currentIndex = -1;
   private nextIndex = 0;
+  private playbackMode: RuntimePlaybackMode = "REPEAT_ONE";
   private currentCue: RuntimePlayCue | null = null;
   private currentChannelId: string | null = null;
   private held = false;
@@ -66,6 +68,19 @@ export class BackgroundCoordinator {
   private latestRemoteState: AuthoritativePlaybackState | null = null;
   private pendingRemoteState: AuthoritativePlaybackState | null = null;
   private applyingRemoteState = false;
+  private advancingAfterEnd = false;
+
+  constructor() {
+    /**
+     * AudioEngine 只负责“这一条媒体怎么播”；完整歌单推进必须放在 BackgroundCoordinator。
+     * 这样 Action 关闭以后，媒体自然结束仍然能按照顺序/列表循环/随机策略继续下一首。
+     */
+    this.engine = new AudioEngine({
+      onEnded: (channelId) => {
+        void this.handleChannelEnded(channelId);
+      },
+    });
+  }
 
   start(): void {
     if (this.runtimeUnsubscribe) return;
@@ -130,8 +145,10 @@ export class BackgroundCoordinator {
         held: this.held,
         currentIndex: this.currentIndex,
         nextIndex: this.nextIndex,
+        playbackMode: this.playbackMode,
         currentCue: this.currentCue ?? undefined,
         nextCue,
+        queue: this.plan?.cues ?? [],
       },
       busGainsDb: {
         MASTER: this.engine.getBusGainDb("MASTER"),
@@ -217,7 +234,8 @@ export class BackgroundCoordinator {
         case "LOAD_PLAN":
           this.plan = command.plan;
           this.currentIndex = -1;
-          this.nextIndex = 0;
+          this.playbackMode = command.plan.playbackMode ?? this.playbackMode;
+          this.nextIndex = this.clampPlanIndex(command.plan.startIndex ?? 0);
           this.held = false;
           this.revision += 1;
           break;
@@ -300,6 +318,19 @@ export class BackgroundCoordinator {
           }
           break;
 
+        case "SET_PLAYBACK_MODE": {
+          this.playbackMode = command.playbackMode;
+          if (this.currentChannelId && this.currentCue) {
+            const loop = command.playbackMode === "REPEAT_ONE";
+            this.engine.setLoop(this.currentChannelId, loop);
+            this.currentCue = { ...this.currentCue, loop };
+            this.nextIndex = this.resolveFollowingIndex(this.currentIndex);
+          }
+          this.revision += 1;
+          publish = true;
+          break;
+        }
+
         case "SET_BUS_GAIN":
           // Bus gain 是本机监听设置；PLAYER 的 Local Master 不应反向影响其他人。
           this.engine.setBusGainDb(command.busId, command.gainDb, command.rampSeconds ?? 0);
@@ -333,8 +364,14 @@ export class BackgroundCoordinator {
     if (this.held) throw new Error("Show is on HOLD. Release HOLD before GO.");
 
     const cueIndex = this.nextIndex;
-    const nextCue = this.plan.cues[cueIndex];
-    if (!nextCue) throw new Error("End of show: there is no next cue.");
+    const sourceCue = this.plan.cues[cueIndex];
+    if (!sourceCue) throw new Error("播放队列已经结束。");
+
+    // 单曲循环是媒体层的 loop；其他三种模式必须允许 ended 冒泡给 coordinator。
+    const nextCue: RuntimePlayCue = {
+      ...sourceCue,
+      loop: this.playbackMode === "REPEAT_ONE",
+    };
 
     if (!this.engine.isUnlocked) await this.engine.unlock();
 
@@ -343,7 +380,13 @@ export class BackgroundCoordinator {
     const currentChannelId = this.currentChannelId;
     const fadeSeconds = Math.max(0, nextCue.fadeSeconds ?? 0);
 
-    if (currentCue && currentChannelId && currentCue.busId === nextCue.busId && fadeSeconds > 0) {
+    if (
+      currentCue &&
+      currentChannelId &&
+      currentChannelId !== nextChannelId &&
+      currentCue.busId === nextCue.busId &&
+      fadeSeconds > 0
+    ) {
       await this.engine.play(nextChannelId, nextCue.url, {
         busId: nextCue.busId,
         gainDb: -96,
@@ -355,7 +398,7 @@ export class BackgroundCoordinator {
         this.engine.destroyChannel(currentChannelId);
       }, Math.ceil(fadeSeconds * 1000) + 80);
     } else {
-      if (currentCue && currentChannelId && currentCue.busId === nextCue.busId) {
+      if (currentCue && currentChannelId) {
         this.engine.stop(currentChannelId);
         this.engine.destroyChannel(currentChannelId);
       }
@@ -369,9 +412,73 @@ export class BackgroundCoordinator {
     this.currentCue = nextCue;
     this.currentChannelId = nextChannelId;
     this.currentIndex = cueIndex;
-    this.nextIndex = cueIndex + 1;
+    this.nextIndex = this.resolveFollowingIndex(cueIndex);
     this.phase = "PLAYING";
     this.revision += 1;
+  }
+
+  /**
+   * 媒体自然结束后的自动推进。
+   *
+   * PLAYER 的 plan 永远是 null，所以不会自行“猜下一首”；它只听 GM 的 STATE。
+   * GM 则根据真实播放模式决定是否继续，并在切歌后立刻广播新 authoritative state。
+   */
+  private async handleChannelEnded(channelId: string): Promise<void> {
+    if (channelId !== this.currentChannelId || this.phase !== "PLAYING" || !this.plan) return;
+    if (this.playbackMode === "REPEAT_ONE" || this.advancingAfterEnd) return;
+
+    this.advancingAfterEnd = true;
+    try {
+      const atSequentialEnd =
+        this.playbackMode === "SEQUENTIAL" && this.nextIndex >= this.plan.cues.length;
+
+      if (atSequentialEnd) {
+        this.phase = "STOPPED";
+        this.revision += 1;
+      } else {
+        await this.go();
+      }
+
+      const role = await this.ensureRole();
+      if (role === "GM") await this.publishAuthoritativeState(true);
+    } catch {
+      // 自动推进失败不应把 Background 弄死；保留 STOPPED，等待用户手动选曲。
+      this.phase = "STOPPED";
+      this.revision += 1;
+    } finally {
+      this.advancingAfterEnd = false;
+    }
+  }
+
+  /** 把任意 startIndex 收敛到当前计划的合法索引。空计划统一返回 0。 */
+  private clampPlanIndex(index: number): number {
+    const count = this.plan?.cues.length ?? 0;
+    if (count <= 0) return 0;
+    return Math.max(0, Math.min(count - 1, Math.trunc(index)));
+  }
+
+  /**
+   * 计算“下一次手动 Next / 自动 ended”将使用的索引。
+   * REPEAT_ONE 的自动重复由 media.loop 完成，因此这里仍指向真正的下一首，确保用户
+   * 点击 Next 时不会被困在当前曲目。
+   */
+  private resolveFollowingIndex(currentIndex: number): number {
+    const count = this.plan?.cues.length ?? 0;
+    if (count <= 0) return 0;
+
+    if (this.playbackMode === "SHUFFLE") {
+      if (count === 1) return 0;
+      let next = currentIndex;
+      while (next === currentIndex) next = Math.floor(Math.random() * count);
+      return next;
+    }
+
+    if (this.playbackMode === "REPEAT_ALL" || this.playbackMode === "REPEAT_ONE") {
+      return (Math.max(0, currentIndex) + 1) % count;
+    }
+
+    // SEQUENTIAL 故意允许返回 count，用这个哨兵表示“队列自然结束”。
+    return Math.max(0, currentIndex) + 1;
   }
 
   private async handleRoomSync(message: RoomSyncMessage): Promise<void> {
@@ -432,6 +539,7 @@ export class BackgroundCoordinator {
     this.plan = null;
     this.currentIndex = -1;
     this.nextIndex = 0;
+    this.playbackMode = state.cue?.loop ? "REPEAT_ONE" : "SEQUENTIAL";
     this.held = false;
     this.currentCue = state.cue
       ? {
