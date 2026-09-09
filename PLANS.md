@@ -1,5 +1,54 @@
 # Owlbear Audio — ExecPlan
 
+## 2026-09-09 第一阶段重新收口（当前执行计划）
+
+这轮不再继续扩展 Show Control，而是把用户真正能完成的一条链路做稳，并直接部署给真实房间测试。
+
+### 产品边界
+
+- **仍然只有一个 Action Popover 用户入口**；`background_url` 只做隐藏播放与同步 runtime。
+- DM/GM 与 PLAYER 共用同一个 Action，根据角色展示不同能力，不再创建 Studio Modal / Tool / Context Menu。
+- 前端从 shadcn + Tailwind 自写样式迁移到 **Web Awesome Web Components**：交互控件使用其 Shadow DOM 组件，布局优先使用 Web Awesome 自带 utility classes，项目只保留宿主页面尺寸/滚动所必需的极少 CSS。
+
+### GM 第一阶段完整流程
+
+`打开 Action → Library → 选择转码质量 → 从电脑导入 → 浏览器本地转 Opus/WebM → Owlbear 原生保存到 Owlbear Audio Collection → 完成导入/添加已有音频 → 分类标签管理 → 选曲播放`
+
+播放器固定在 Action 底部，提供：
+
+- 上一首 / 播放暂停 / 下一首；
+- 可拖动进度；
+- 当前时间 / 总时长；
+- 循环开关；
+- 本机 Master 音量；
+- 切歌使用短 equal-power crossfade。
+
+Library 上部提供简单分类标签（第一阶段用本机索引保存分类），不引入复杂 Playlist / Scene / Cue 概念。
+
+### PLAYER 第一阶段流程
+
+`打开 Action → 查看当前曲目与进度 → 浏览器若需要则启用声音 → 自动跟随 GM → 调本机音量/静音`
+
+PLAYER 不展示导入、删除、分类或切歌等 GM 管理操作。
+
+### 本轮必须修复的可靠性问题
+
+- GM 第一次 GO 不能依赖 5 秒 heartbeat 才让 PLAYER 收到；role 初始化必须在第一次 authoritative publish 前完成。
+- Action 打开后首次播放必须直接尝试播放，不再把 5 秒 heartbeat 当作启动路径。
+- `downloadImages()` 失败时必须把 SDK 的结构化错误展开成人能读懂的错误信息，不能只显示 `[object Object]`。
+- “添加已有音频”与“完成导入”都统一只接受 Owlbear Audio 生产 WebM，并保存 duration / preset / category 等索引信息。
+- 任何播放器按钮都不能因为 Action 关闭而销毁播放；Background 始终是唯一 AudioEngine owner。
+
+### 验收与发布
+
+1. `npm run build`、`npm run lint` 通过。
+2. 用本地浏览器/现有 Owlbear 房间验证 Action 角色分流和基础控制。
+3. Cloudflare 部署成功。
+4. 生产 manifest 可访问。
+5. 绑定 `zjhstudio.com` 子域名后再进行真实 GM/PLAYER 双端测试。
+
+---
+
 ## 目标
 
 开发一个 **零后端优先** 的 Owlbear Rodeo 2 音频扩展，让 GM/DM 可以把本地音乐、环境音和音效导入、转码后尽量存进 Owlbear 自己的资产空间，并在跑团过程中用低认知负担的方式控制复杂音频。
