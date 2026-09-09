@@ -571,9 +571,11 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
               )}
             </ScrollArea>
 
-            <p className="border-t px-3 py-1.5 text-[11px] text-muted-foreground" role="status">
-              {status}
-            </p>
+            {status !== "准备就绪" && (
+              <p className="border-t px-3 py-1.5 text-[11px] text-muted-foreground" role="status">
+                {status}
+              </p>
+            )}
           </div>
         </TabsContent>
 

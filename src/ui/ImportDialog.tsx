@@ -128,7 +128,7 @@ export function ImportDialog({
             <FieldLabel>音质</FieldLabel>
             <Select value={preset} onValueChange={(value) => setPreset(value as ImportPresetId)}>
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <SelectValue>{PRESET_LABELS[preset]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -146,7 +146,7 @@ export function ImportDialog({
             <FieldLabel>分类</FieldLabel>
             <Select value={category} onValueChange={(value) => setCategory(value as TrackCategory)}>
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <SelectValue>{CATEGORY_LABELS[category]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>

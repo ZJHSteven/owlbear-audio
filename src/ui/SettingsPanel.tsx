@@ -67,7 +67,7 @@ export function SettingsPanel({
               value={preferences.defaultPreset}
               onValueChange={(value) => patch({ defaultPreset: value as LocalPlayerPreferences["defaultPreset"] })}
             >
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue>{PRESET_LABELS[preferences.defaultPreset]}</SelectValue></SelectTrigger>
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="SPEECH">{PRESET_LABELS.SPEECH}</SelectItem>
@@ -85,7 +85,7 @@ export function SettingsPanel({
               value={preferences.defaultCategory}
               onValueChange={(value) => patch({ defaultCategory: value as LocalPlayerPreferences["defaultCategory"] })}
             >
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue>{CATEGORY_LABELS[preferences.defaultCategory]}</SelectValue></SelectTrigger>
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="MUSIC">{CATEGORY_LABELS.MUSIC}</SelectItem>
@@ -102,7 +102,7 @@ export function SettingsPanel({
               value={preferences.playbackMode}
               onValueChange={(value) => patch({ playbackMode: value as LocalPlayerPreferences["playbackMode"] })}
             >
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full"><SelectValue>{PLAYBACK_MODE_LABELS[preferences.playbackMode]}</SelectValue></SelectTrigger>
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="SEQUENTIAL">{PLAYBACK_MODE_LABELS.SEQUENTIAL}</SelectItem>
