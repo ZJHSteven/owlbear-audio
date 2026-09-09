@@ -8,7 +8,43 @@
 
 - **仍然只有一个 Action Popover 用户入口**；`background_url` 只做隐藏播放与同步 runtime。
 - DM/GM 与 PLAYER 共用同一个 Action，根据角色展示不同能力，不再创建 Studio Modal / Tool / Context Menu。
-- 前端从 shadcn + Tailwind 自写样式迁移到 **Web Awesome Web Components**：交互控件使用其 Shadow DOM 组件，布局优先使用 Web Awesome 自带 utility classes，项目只保留宿主页面尺寸/滚动所必需的极少 CSS。
+- **2026-09-09 视觉方向修正：撤销 Web Awesome 作为产品 UI 的决定。** Web Awesome/Shadow DOM 本身不是视觉目标，当前默认蓝黑主题与产品气质不符。
+- 产品 UI 改回 **shadcn/ui + Tailwind 语义 token + Lucide**，视觉目标对齐 Family AI / AI Elements：黑白灰、低饱和、较大留白、轻边框、圆角、图标优先、Tooltip 解释。
+- 不手绘 SVG；播放器、列表、抽屉、对话框、Slider、Tooltip、Tabs 等优先使用成熟 shadcn 组件或兼容 registry block 组合。
+- Shadow DOM 只是一种 Web Component 封装技术，不再作为选型硬约束；本项目的样式隔离主要依赖 Owlbear 本身把扩展运行在独立 iframe 中。
+
+### 2026-09-09 新版 GM/DM UX
+
+首次进入：
+
+`欢迎/版本公告 → 说明 Owlbear Audio Collection 的一次性前置条件 → “我已知晓” → Library`
+
+主界面顶部只有两个一级入口：
+
+- **音乐库**：默认页。
+- **设置**：本机音量、默认转码质量、默认循环模式、默认导入分类、欢迎页/存储引导重置、诊断信息等。
+
+音乐库：
+
+- 左上角菜单按钮打开 **Sheet 侧栏**；背景遮罩，选择分类后自动关闭。
+- 分类第一阶段至少包含：全部 / 音乐 / 氛围 / 音效；底层保留 group/tags 以便未来用户自定义文件夹与标签。
+- 空库时使用 shadcn `Empty`，主 CTA 为“上传你的第一个音频”。
+- 曲目行使用 `Item`/列表范式：左侧封面/占位图标，中间标题 + 灰色次要信息，右侧 Hover 后出现“立即播放 / 下一首 / 加入队列 / 更多”。
+- 右上角保留紧凑“添加音频”按钮；支持批量本地文件、质量选择、浏览器本地转码、上传。
+
+底部播放器固定：
+
+- 上方：当前曲目 + 进度 Slider + 当前时间 / 总时长。
+- 中央主控：`后退 15 秒 / 上一首 / 大圆形播放暂停 / 下一首 / 前进 15 秒`。
+- 左下：音量按钮 + 音量 Slider。
+- 右下：播放队列按钮 + 播放模式按钮。
+- 播放模式按点击循环：**顺序播放 → 单曲循环 → 列表循环 → 随机**；图标状态 + Tooltip，不直接堆文字。
+- 播放队列使用 Sheet/Drawer，显示当前与后续项目，并支持删除/排序（排序可留后续小版本）。
+
+### PLAYER UX
+
+- PLAYER 端不展示 Library 管理功能，只展示当前播放、进度、本机音量以及“启用声音/重新尝试”状态。
+- PLAYER 初始化/广播故障列为本轮 P0：必须在真实双端房间中验证 `STATE_REQUEST → STATE → autoplay fallback → 持续同步` 全链路，而不是只跑单元探针。
 
 ### GM 第一阶段完整流程
 
