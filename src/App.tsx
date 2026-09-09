@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
+import WaSpinner from "@awesome.me/webawesome/dist/react/spinner/index.js";
 import { BackgroundCoordinator } from "@/runtime/BackgroundCoordinator";
 import { PlayerConsole } from "@/ui/PlayerConsole";
 import { SimpleActionConsole } from "@/ui/SimpleActionConsole";
@@ -18,17 +19,9 @@ function App() {
   useEffect(() => {
     if (!ready) return;
     const applyTheme = (theme: Awaited<ReturnType<typeof OBR.theme.getTheme>>) => {
-      const root = document.documentElement;
-      root.classList.toggle("dark", theme.mode === "DARK");
-      root.style.setProperty("--background", theme.background.default);
-      root.style.setProperty("--foreground", theme.text.primary);
-      root.style.setProperty("--card", theme.background.paper);
-      root.style.setProperty("--card-foreground", theme.text.primary);
-      root.style.setProperty("--popover", theme.background.paper);
-      root.style.setProperty("--popover-foreground", theme.text.primary);
-      root.style.setProperty("--primary", theme.primary.main);
-      root.style.setProperty("--primary-foreground", theme.primary.contrastText);
-      root.style.setProperty("--muted-foreground", theme.text.secondary);
+      // Web Awesome 的 dark theme 由官方 `wa-dark` class 控制；组件内部 Shadow DOM
+      // 会读取同一套 design tokens，因此不再维护一份 shadcn/Tailwind 主题变量镜像。
+      document.documentElement.classList.toggle("wa-dark", theme.mode === "DARK");
     };
 
     void OBR.theme.getTheme().then(applyTheme);
@@ -56,13 +49,14 @@ function App() {
   }, [isBackground, ready]);
 
   if (isBackground) {
-    return <main aria-label="Owlbear Audio background runtime" className="hidden" />;
+    return <main aria-label="Owlbear Audio background runtime" hidden />;
   }
 
   if (role === null) {
     return (
-      <main className="grid h-[min(620px,100dvh)] place-items-center bg-background px-6 text-center text-sm text-muted-foreground">
-        正在连接 Owlbear Audio…
+      <main className="wa-stack wa-align-items-center wa-gap-s">
+        <WaSpinner />
+        <span>正在连接 Owlbear Audio…</span>
       </main>
     );
   }
