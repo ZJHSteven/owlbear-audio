@@ -4,6 +4,7 @@ import {
   RUNTIME_EVENT_CHANNEL,
   type RuntimeCommandInput,
   type RuntimeEvent,
+  type RuntimePlaybackMode,
   type RuntimePlan,
   type RuntimeSnapshot,
 } from "./protocol";
@@ -136,6 +137,10 @@ export class BackgroundClient {
 
   setLoop(channelId: string, loop: boolean): Promise<RuntimeResponse> {
     return this.send({ type: "SET_LOOP", channelId, loop });
+  }
+
+  setPlaybackMode(playbackMode: RuntimePlaybackMode): Promise<RuntimeResponse> {
+    return this.send({ type: "SET_PLAYBACK_MODE", playbackMode });
   }
 
   setBusGain(
