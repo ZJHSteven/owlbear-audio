@@ -42,6 +42,16 @@ export class BackgroundCoordinator {
   private heartbeatTimer: number | null = null;
 
   private role: PlayerRole | null = null;
+  /**
+   * Owlbear 的 role 读取是异步的。旧实现只是 fire-and-forget initializeRole()，
+   * 因而 Background 刚挂载时用户立刻按 GO，`this.role` 仍可能是 null：
+   * 音乐本机已经播放，但第一次 authoritative broadcast 会被跳过，PLAYER 只能
+   * 等 5 秒 heartbeat 补发。这正是此前“为什么要等约 5000 ms”的根因。
+   *
+   * 现在把初始化 Promise 保存下来；任何需要对外发布的命令都必须先 await 它。
+   * heartbeat 只保留作低频纠偏，不再承担首帧启动职责。
+   */
+  private roleReady: Promise<PlayerRole | null> | null = null;
   private plan: RuntimePlan | null = null;
   private currentIndex = -1;
   private nextIndex = 0;
@@ -69,7 +79,7 @@ export class BackgroundCoordinator {
       this.handleRoomSync(event.data);
     });
 
-    void this.initializeRole();
+    this.roleReady = this.initializeRole();
   }
 
   stop(): void {
@@ -85,6 +95,7 @@ export class BackgroundCoordinator {
   /** 只用于自动化回归，生产 UI 不调用。 */
   async debugSetRoleForProbe(role: PlayerRole): Promise<void> {
     this.role = role;
+    this.roleReady = Promise.resolve(role);
     this.configureHeartbeat();
     if (role === "PLAYER") {
       await this.hydrateRoomCheckpoint();
@@ -120,7 +131,7 @@ export class BackgroundCoordinator {
     };
   }
 
-  private async initializeRole(): Promise<void> {
+  private async initializeRole(): Promise<PlayerRole | null> {
     try {
       this.role = await OBR.player.getRole();
       this.configureHeartbeat();
@@ -128,9 +139,24 @@ export class BackgroundCoordinator {
         await this.hydrateRoomCheckpoint();
         await this.requestRoomState();
       }
+      return this.role;
     } catch {
       // SDK role 暂时不可读时，本地 RPC 仍可工作；下一次页面重建会重新初始化。
+      return null;
     }
+  }
+
+  /**
+   * 等待首次 role 初始化；若 Owlbear SDK 在首次握手阶段暂时失败，再补尝试一次。
+   * 调用者不需要猜 Background 是否已经“热身完毕”。
+   */
+  private async ensureRole(): Promise<PlayerRole | null> {
+    if (!this.roleReady) this.roleReady = this.initializeRole();
+    const first = await this.roleReady;
+    if (first) return first;
+
+    this.roleReady = this.initializeRole();
+    return this.roleReady;
   }
 
   private configureHeartbeat(): void {
@@ -227,13 +253,25 @@ export class BackgroundCoordinator {
           }
           break;
 
+        case "SET_LOOP":
+          this.engine.setLoop(command.channelId, command.loop);
+          if (command.channelId === this.currentChannelId && this.currentCue) {
+            this.currentCue = { ...this.currentCue, loop: command.loop };
+            this.revision += 1;
+            publish = true;
+          }
+          break;
+
         case "SET_BUS_GAIN":
           // Bus gain 是本机监听设置；PLAYER 的 Local Master 不应反向影响其他人。
           this.engine.setBusGainDb(command.busId, command.gainDb, command.rampSeconds ?? 0);
           break;
       }
 
-      if (publish && this.role === "GM") await this.publishAuthoritativeState(true);
+      if (publish) {
+        const role = await this.ensureRole();
+        if (role === "GM") await this.publishAuthoritativeState(true);
+      }
 
       await this.ack({
         type: "ACK",
@@ -328,7 +366,16 @@ export class BackgroundCoordinator {
 
         // 只有仍然是最新或并列最新的 revision 才值得真正碰播放器。
         if (this.latestRemoteState && state.revision < this.latestRemoteState.revision) continue;
-        await this.applyRemoteState(state);
+        try {
+          await this.applyRemoteState(state);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "NotAllowedError") {
+            // autoplay-first：只有浏览器明确拒绝时，才保留最新状态等待一次用户手势重试。
+            this.pendingRemoteState = this.latestRemoteState ?? state;
+            break;
+          }
+          throw error;
+        }
       }
     } finally {
       this.applyingRemoteState = false;

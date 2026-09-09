@@ -75,6 +75,12 @@ export type RuntimeCommand =
     }
   | {
       id: string;
+      type: "SET_LOOP";
+      channelId: string;
+      loop: boolean;
+    }
+  | {
+      id: string;
       type: "SET_BUS_GAIN";
       busId: BusId;
       gainDb: number;

@@ -1,9 +1,5 @@
 import type { BusId } from "../core/types";
 
-/**
- * 将 dB 转为 Web Audio GainNode 使用的线性增益。
- * -Infinity / 极低值直接钳为 0，避免浮点下溢。
- */
 export function dbToGain(db: number): number {
   if (!Number.isFinite(db) || db <= -96) return 0;
   return 10 ** (db / 20);
@@ -32,9 +28,8 @@ interface ChannelRuntime {
   busId: Exclude<BusId, "MASTER">;
   url: string;
   media: HTMLAudioElement;
-  source: MediaElementAudioSourceNode;
-  gain: GainNode;
   gainDb: number;
+  fadeScale: number;
 }
 
 const DEFAULT_BUS_GAIN_DB: Record<BusId, number> = {
@@ -46,71 +41,45 @@ const DEFAULT_BUS_GAIN_DB: Record<BusId, number> = {
 };
 
 /**
- * 浏览器本地唯一的播放 runtime。
+ * v0.1 的稳定播放 runtime。
  *
- * 设计约束：
- * - 不依赖 React；UI 重渲染不能销毁 transport。
- * - AudioContext 只在显式 unlock() 后创建/恢复，便于正确处理 autoplay policy。
- * - 长音乐使用 HTMLMediaElement 流式读取，避免把几十 MB 音频全部 decode 成 AudioBuffer。
- * - HTMLMediaElement 通过 MediaElementAudioSourceNode 接进 Web Audio bus graph，后续可以
- *   在不改播放器 API 的情况下加入 EQ、ducking、compressor、spatial node 等处理。
+ * 只使用原生 HTMLAudioElement，不创建 AudioContext：
+ * - 避免移动端隐藏 iframe 的 AudioContext.resume() 永久 suspended；
+ * - 长音乐仍然走浏览器流式媒体管线；
+ * - Action 关闭后 Background iframe 仍持有 media element，因此音乐继续；
+ * - 未来需要 EQ/ducking/FX 时再引入单独的高级 Web Audio runtime。
  */
 export class AudioEngine {
-  private context: AudioContext | null = null;
-  private masterGain: GainNode | null = null;
-  private readonly busGains = new Map<BusId, GainNode>();
   private readonly busGainDb = new Map<BusId, number>(
     Object.entries(DEFAULT_BUS_GAIN_DB) as Array<[BusId, number]>,
   );
   private readonly channels = new Map<string, ChannelRuntime>();
+  private playbackPermission: "UNKNOWN" | "ALLOWED" | "BLOCKED" = "UNKNOWN";
 
   /**
-   * 必须从真实用户 gesture（例如 Action 的 Enable Audio / Play 按钮）调用。
-   * Chromium 允许创建 suspended AudioContext，但真正 resume / media.play 的首次授权
-   * 仍受 user activation 控制，因此我们把“解锁”做成明确的产品状态，而不是偷偷重试。
+   * 保留兼容 RPC，但 v0.1 不再有需要等待的 AudioContext 解锁动作。
+   * 真正的 autoplay 是否允许由 media.play() 的 Promise 决定。
    */
   async unlock(): Promise<void> {
-    this.ensureGraph();
-
-    if (!this.context) {
-      throw new Error("AudioContext graph was not created");
-    }
-
-    if (this.context.state !== "running") {
-      await this.context.resume();
-    }
-
-    // 通过极短的静音 oscillator 强制触发一次真实 Web Audio render quantum。
-    // 它不会产生可听声音，但能让诊断界面明确知道 context 已经进入 running。
-    const oscillator = this.context.createOscillator();
-    const silent = this.context.createGain();
-    silent.gain.value = 0;
-    oscillator.connect(silent).connect(this.context.destination);
-    oscillator.start();
-    oscillator.stop(this.context.currentTime + 0.01);
+    this.playbackPermission = "UNKNOWN";
   }
 
   get isUnlocked(): boolean {
-    return this.context?.state === "running";
+    return this.playbackPermission !== "BLOCKED";
   }
 
   get contextState(): AudioContextState | "UNINITIALIZED" {
-    return this.context?.state ?? "UNINITIALIZED";
+    return this.playbackPermission === "BLOCKED" ? "suspended" : "running";
   }
 
-  /**
-   * 预加载媒体 metadata / 浏览器缓冲，但不开始播放。
-   * 返回 duration，方便 Cue/Clip 层校验 in/out 和 loop 边界。
-   */
   async preload(
     channelId: string,
     url: string,
     options: PlaybackChannelOptions,
   ): Promise<number> {
     const channel = this.getOrCreateChannel(channelId, url, options);
-
     if (channel.media.readyState >= HTMLMediaElement.HAVE_METADATA) {
-      return channel.media.duration;
+      return Number.isFinite(channel.media.duration) ? channel.media.duration : 0;
     }
 
     channel.media.preload = "auto";
@@ -129,32 +98,33 @@ export class AudioEngine {
         channel.media.removeEventListener("loadedmetadata", onMetadata);
         channel.media.removeEventListener("error", onError);
       };
-
       channel.media.addEventListener("loadedmetadata", onMetadata, { once: true });
       channel.media.addEventListener("error", onError, { once: true });
     });
 
-    return channel.media.duration;
+    return Number.isFinite(channel.media.duration) ? channel.media.duration : 0;
   }
 
-  /**
-   * 从指定位置播放一个 channel。
-   * 第一次调用如果浏览器尚未得到用户授权，会保留原始 NotAllowedError 给上层，
-   * UI 应提示用户点击 Enable Audio，而不是把它吞掉后假装“网络失败”。
-   */
   async play(
     channelId: string,
     url: string,
     options: PlaybackChannelOptions,
   ): Promise<void> {
     const channel = this.getOrCreateChannel(channelId, url, options);
-
+    channel.media.loop = options.loop ?? false;
     if (options.startSeconds !== undefined) {
       channel.media.currentTime = Math.max(0, options.startSeconds);
     }
-    channel.media.loop = options.loop ?? false;
-
-    await channel.media.play();
+    this.applyChannelVolume(channel);
+    try {
+      await channel.media.play();
+      this.playbackPermission = "ALLOWED";
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotAllowedError") {
+        this.playbackPermission = "BLOCKED";
+      }
+      throw error;
+    }
   }
 
   pause(channelId: string): void {
@@ -164,83 +134,83 @@ export class AudioEngine {
   stop(channelId: string): void {
     const channel = this.channels.get(channelId);
     if (!channel) return;
-
     channel.media.pause();
     try {
       channel.media.currentTime = 0;
     } catch {
-      // 某些尚未拿到 metadata 的媒体不允许 seek；pause 已经足够完成 stop 语义。
+      // metadata 尚未可用时 pause 已足够完成 stop 语义。
     }
   }
 
   stopAll(): void {
-    for (const channel of this.channels.values()) {
-      channel.media.pause();
-      try {
-        channel.media.currentTime = 0;
-      } catch {
-        // 同 stop()。
-      }
-    }
+    for (const channel of this.channels.values()) this.stop(channel.id);
   }
 
   seek(channelId: string, seconds: number): void {
-    const channel = this.requireChannel(channelId);
-    channel.media.currentTime = Math.max(0, seconds);
+    this.requireChannel(channelId).media.currentTime = Math.max(0, seconds);
+  }
+
+  /**
+   * 只修改已有播放通道的整轨循环状态，不重新 load / play 媒体。
+   *
+   * 这样 GM 在 Action 里切换“循环”时不会产生一次可听见的重启，也不会改变
+   * currentTime。PLAYER 端随后会从 authoritative state 收到同一个 loop 状态。
+   */
+  setLoop(channelId: string, loop: boolean): void {
+    this.requireChannel(channelId).media.loop = loop;
   }
 
   setChannelGainDb(channelId: string, gainDb: number, rampSeconds = 0): void {
     const channel = this.requireChannel(channelId);
-    channel.gainDb = gainDb;
-    this.rampGain(channel.gain.gain, dbToGain(gainDb), rampSeconds);
+    if (rampSeconds <= 0) {
+      channel.gainDb = gainDb;
+      this.applyChannelVolume(channel);
+      return;
+    }
+    const start = channel.gainDb;
+    this.animate(rampSeconds, (progress) => {
+      channel.gainDb = start + (gainDb - start) * progress;
+      this.applyChannelVolume(channel);
+    });
   }
 
   setBusGainDb(busId: BusId, gainDb: number, rampSeconds = 0): void {
-    this.ensureGraph();
-    const node = this.busGains.get(busId);
-    if (!node) throw new Error(`Unknown bus: ${busId}`);
-
-    this.busGainDb.set(busId, gainDb);
-    this.rampGain(node.gain, dbToGain(gainDb), rampSeconds);
+    const previous = this.getBusGainDb(busId);
+    if (rampSeconds <= 0) {
+      this.busGainDb.set(busId, gainDb);
+      this.refreshVolumes();
+      return;
+    }
+    this.animate(rampSeconds, (progress) => {
+      this.busGainDb.set(busId, previous + (gainDb - previous) * progress);
+      this.refreshVolumes();
+    });
   }
 
   getBusGainDb(busId: BusId): number {
     return this.busGainDb.get(busId) ?? 0;
   }
 
-  /**
-   * 两个 channel 做 equal-power crossfade。
-   *
-   * 线性交叉淡化在中点会产生明显能量下陷；cos/sin 曲线更适合音乐转场。
-   * 这里对 channel gain 做曲线，Bus 仍保留独立 master gain。
-   */
+  /** 轻量 equal-power crossfade；使用 timer，隐藏 Background 时也不会依赖 RAF。 */
   crossfade(fromChannelId: string, toChannelId: string, durationSeconds: number): void {
-    this.ensureGraph();
-    if (!this.context) throw new Error("AudioContext is not initialized");
-
     const from = this.requireChannel(fromChannelId);
     const to = this.requireChannel(toChannelId);
-    const duration = Math.max(0.01, durationSeconds);
-    const sampleCount = Math.max(32, Math.ceil(duration * 60));
-    const fadeOut = new Float32Array(sampleCount);
-    const fadeIn = new Float32Array(sampleCount);
-
-    for (let i = 0; i < sampleCount; i += 1) {
-      const x = i / (sampleCount - 1);
-      fadeOut[i] = Math.cos((x * Math.PI) / 2);
-      fadeIn[i] = Math.sin((x * Math.PI) / 2);
-    }
-
-    const now = this.context.currentTime;
-    from.gain.gain.cancelScheduledValues(now);
-    to.gain.gain.cancelScheduledValues(now);
-    from.gain.gain.setValueAtTime(from.gain.gain.value, now);
-    to.gain.gain.setValueAtTime(0, now);
-    from.gain.gain.setValueCurveAtTime(fadeOut, now, duration);
-    to.gain.gain.setValueCurveAtTime(fadeIn, now, duration);
-
-    from.gainDb = -96;
     to.gainDb = 0;
+    from.fadeScale = 1;
+    to.fadeScale = 0;
+    this.applyChannelVolume(from);
+    this.applyChannelVolume(to);
+
+    this.animate(Math.max(0.01, durationSeconds), (progress) => {
+      from.fadeScale = Math.cos((progress * Math.PI) / 2);
+      to.fadeScale = Math.sin((progress * Math.PI) / 2);
+      this.applyChannelVolume(from);
+      this.applyChannelVolume(to);
+      if (progress >= 1) {
+        from.gainDb = -96;
+        to.gainDb = 0;
+      }
+    });
   }
 
   snapshot(): ChannelSnapshot[] {
@@ -259,50 +229,15 @@ export class AudioEngine {
   destroyChannel(channelId: string): void {
     const channel = this.channels.get(channelId);
     if (!channel) return;
-
     channel.media.pause();
     channel.media.removeAttribute("src");
     channel.media.load();
-    channel.source.disconnect();
-    channel.gain.disconnect();
     this.channels.delete(channelId);
   }
 
   async close(): Promise<void> {
     this.stopAll();
-    for (const channelId of [...this.channels.keys()]) {
-      this.destroyChannel(channelId);
-    }
-
-    if (this.context && this.context.state !== "closed") {
-      await this.context.close();
-    }
-
-    this.context = null;
-    this.masterGain = null;
-    this.busGains.clear();
-  }
-
-  private ensureGraph(): void {
-    if (this.context && this.masterGain) return;
-
-    const AudioContextConstructor = window.AudioContext;
-    if (!AudioContextConstructor) {
-      throw new Error("Web Audio API is not available in this browser");
-    }
-
-    this.context = new AudioContextConstructor({ latencyHint: "interactive" });
-    this.masterGain = this.context.createGain();
-    this.masterGain.gain.value = dbToGain(this.busGainDb.get("MASTER") ?? 0);
-    this.masterGain.connect(this.context.destination);
-    this.busGains.set("MASTER", this.masterGain);
-
-    for (const busId of ["MUSIC", "AMBIENCE", "SFX", "VOICE"] as const) {
-      const gain = this.context.createGain();
-      gain.gain.value = dbToGain(this.busGainDb.get(busId) ?? 0);
-      gain.connect(this.masterGain);
-      this.busGains.set(busId, gain);
-    }
+    for (const channelId of [...this.channels.keys()]) this.destroyChannel(channelId);
   }
 
   private getOrCreateChannel(
@@ -310,46 +245,35 @@ export class AudioEngine {
     url: string,
     options: PlaybackChannelOptions,
   ): ChannelRuntime {
-    this.ensureGraph();
-    if (!this.context) throw new Error("AudioContext is not initialized");
-
     const existing = this.channels.get(channelId);
     if (existing) {
       if (existing.url !== url || existing.busId !== options.busId) {
         this.destroyChannel(channelId);
       } else {
-        if (options.gainDb !== undefined && options.gainDb !== existing.gainDb) {
-          this.setChannelGainDb(channelId, options.gainDb);
-        }
+        if (options.gainDb !== undefined) existing.gainDb = options.gainDb;
+        existing.media.loop = options.loop ?? existing.media.loop;
+        this.applyChannelVolume(existing);
         return existing;
       }
     }
-
-    const bus = this.busGains.get(options.busId);
-    if (!bus) throw new Error(`Bus graph not initialized: ${options.busId}`);
 
     const media = new Audio();
     media.crossOrigin = "anonymous";
     media.preload = "auto";
     media.src = url;
-
-    const source = this.context.createMediaElementSource(media);
-    const gain = this.context.createGain();
-    const gainDb = options.gainDb ?? 0;
-    gain.gain.value = dbToGain(gainDb);
-    source.connect(gain).connect(bus);
+    media.loop = options.loop ?? false;
+    media.setAttribute("playsinline", "");
 
     const channel: ChannelRuntime = {
       id: channelId,
       busId: options.busId,
       url,
       media,
-      source,
-      gain,
-      gainDb,
+      gainDb: options.gainDb ?? 0,
+      fadeScale: 1,
     };
-
     this.channels.set(channelId, channel);
+    this.applyChannelVolume(channel);
     return channel;
   }
 
@@ -359,20 +283,28 @@ export class AudioEngine {
     return channel;
   }
 
-  private rampGain(param: AudioParam, target: number, durationSeconds: number): void {
-    this.ensureGraph();
-    if (!this.context) throw new Error("AudioContext is not initialized");
+  private applyChannelVolume(channel: ChannelRuntime): void {
+    const totalDb =
+      channel.gainDb +
+      this.getBusGainDb(channel.busId) +
+      this.getBusGainDb("MASTER");
+    const linear = dbToGain(totalDb) * channel.fadeScale;
+    channel.media.volume = Math.max(0, Math.min(1, linear));
+  }
 
-    const now = this.context.currentTime;
-    param.cancelScheduledValues(now);
-    param.setValueAtTime(param.value, now);
+  private refreshVolumes(): void {
+    for (const channel of this.channels.values()) this.applyChannelVolume(channel);
+  }
 
-    if (durationSeconds <= 0) {
-      param.setValueAtTime(target, now);
-      return;
-    }
-
-    param.linearRampToValueAtTime(target, now + durationSeconds);
+  private animate(durationSeconds: number, update: (progress: number) => void): void {
+    const durationMs = Math.max(1, durationSeconds * 1000);
+    const startedAt = performance.now();
+    update(0);
+    const timer = window.setInterval(() => {
+      const progress = Math.min(1, (performance.now() - startedAt) / durationMs);
+      update(progress);
+      if (progress >= 1) window.clearInterval(timer);
+    }, 32);
   }
 
   private mediaError(media: HTMLMediaElement, phase: string): Error {
@@ -382,8 +314,4 @@ export class AudioEngine {
   }
 }
 
-/**
- * Action / background / Studio 不应该各 new 一个引擎。
- * 在同一个 document 中统一通过这个单例取 runtime；跨 iframe 则由 coordinator 消息桥控制唯一 owner。
- */
 export const audioEngine = new AudioEngine();

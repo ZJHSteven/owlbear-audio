@@ -19,7 +19,9 @@ export interface RuntimeResponse {
  * 每条命令带 command id；Background 用 LOCAL broadcast 回 ACK。
  */
 export class BackgroundClient {
-  async send(command: RuntimeCommandInput, timeoutMs = 5000): Promise<RuntimeResponse> {
+  private readyUntil = 0;
+
+  private async sendRaw(command: RuntimeCommandInput, timeoutMs: number): Promise<RuntimeResponse> {
     const id = crypto.randomUUID();
 
     return new Promise<RuntimeResponse>((resolve, reject) => {
@@ -41,7 +43,7 @@ export class BackgroundClient {
       const timeout = window.setTimeout(() => {
         if (settled) return;
         cleanup();
-        reject(new Error(`Background command ${command.type} timed out after ${timeoutMs}ms`));
+        reject(new Error(`Background ${command.type} 未在 ${timeoutMs}ms 内响应`));
       }, timeoutMs);
 
       void OBR.broadcast
@@ -55,8 +57,38 @@ export class BackgroundClient {
     });
   }
 
+  private async ensureReady(maxWaitMs = 2500): Promise<void> {
+    if (Date.now() < this.readyUntil) return;
+
+    const startedAt = performance.now();
+    let delayMs = 80;
+    let lastError: unknown = null;
+    while (performance.now() - startedAt < maxWaitMs) {
+      try {
+        await this.sendRaw({ type: "GET_SNAPSHOT" }, 350);
+        this.readyUntil = Date.now() + 2000;
+        return;
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        delayMs = Math.min(400, Math.round(delayMs * 1.6));
+      }
+    }
+
+    const detail = lastError instanceof Error ? `：${lastError.message}` : "";
+    throw new Error(`Owlbear Audio 后台播放器未启动${detail}`);
+  }
+
+  async send(command: RuntimeCommandInput, timeoutMs?: number): Promise<RuntimeResponse> {
+    if (command.type !== "GET_SNAPSHOT") await this.ensureReady();
+    const effectiveTimeout = timeoutMs ?? (command.type === "PLAY" || command.type === "GO" ? 8000 : 1800);
+    const response = await this.sendRaw(command, effectiveTimeout);
+    this.readyUntil = Date.now() + 2000;
+    return response;
+  }
+
   snapshot(): Promise<RuntimeResponse> {
-    return this.send({ type: "GET_SNAPSHOT" });
+    return this.sendRaw({ type: "GET_SNAPSHOT" }, 700);
   }
 
   loadPlan(plan: RuntimePlan): Promise<RuntimeResponse> {
@@ -100,6 +132,10 @@ export class BackgroundClient {
 
   seek(channelId: string, seconds: number): Promise<RuntimeResponse> {
     return this.send({ type: "SEEK", channelId, seconds });
+  }
+
+  setLoop(channelId: string, loop: boolean): Promise<RuntimeResponse> {
+    return this.send({ type: "SET_LOOP", channelId, loop });
   }
 
   setBusGain(
