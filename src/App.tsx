@@ -49,14 +49,13 @@ function App() {
     // 正常路径仍然使用官方 onReady；额外轮询 OBR.isReady 是为了修复真实 PLAYER 中
     // “iframe 已加载但 React 永远没有跨过 ready=false”的异常。轮询只持续到 ready。
     if (OBR.isReady) markReady();
-    const unsubscribe = OBR.onReady(markReady);
+    OBR.onReady(markReady);
     const timer = window.setInterval(() => {
       if (OBR.isReady) markReady();
     }, 250);
 
     return () => {
       cancelled = true;
-      unsubscribe();
       window.clearInterval(timer);
     };
   }, [isDevGmPreview, isDevPlayerPreview]);
