@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import OBR from "@owlbear-rodeo/sdk";
-import WaSpinner from "@awesome.me/webawesome/dist/react/spinner/index.js";
+import { LoaderCircleIcon } from "lucide-react";
 import { BackgroundCoordinator } from "@/runtime/BackgroundCoordinator";
 import { PlayerConsole } from "@/ui/PlayerConsole";
 import { SimpleActionConsole } from "@/ui/SimpleActionConsole";
@@ -19,9 +19,10 @@ function App() {
   useEffect(() => {
     if (!ready) return;
     const applyTheme = (theme: Awaited<ReturnType<typeof OBR.theme.getTheme>>) => {
-      // Web Awesome 的 dark theme 由官方 `wa-dark` class 控制；组件内部 Shadow DOM
-      // 会读取同一套 design tokens，因此不再维护一份 shadcn/Tailwind 主题变量镜像。
-      document.documentElement.classList.toggle("wa-dark", theme.mode === "DARK");
+      // shadcn 使用 `.dark` 读取同一套 neutral design tokens。
+      // 这里只跟随 Owlbear 宿主的明暗模式，不额外把 Owlbear 的品牌色灌进播放器，
+      // 从而保持和 Family AI 一致的黑/白/灰视觉。
+      document.documentElement.classList.toggle("dark", theme.mode === "DARK");
     };
 
     void OBR.theme.getTheme().then(applyTheme);
@@ -54,8 +55,8 @@ function App() {
 
   if (role === null) {
     return (
-      <main className="wa-stack wa-align-items-center wa-gap-s">
-        <WaSpinner />
+      <main className="flex min-h-56 flex-col items-center justify-center gap-3 bg-background text-sm text-muted-foreground">
+        <LoaderCircleIcon className="size-5 animate-spin" />
         <span>正在连接 Owlbear Audio…</span>
       </main>
     );
