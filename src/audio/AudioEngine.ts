@@ -28,8 +28,18 @@ interface ChannelRuntime {
   busId: Exclude<BusId, "MASTER">;
   url: string;
   media: HTMLAudioElement;
+  /** destroyChannel 时需要解绑，避免旧媒体对象结束后误触发下一首。 */
+  onEnded: () => void;
   gainDb: number;
   fadeScale: number;
+}
+
+export interface AudioEngineHandlers {
+  /**
+   * 媒体自然播放到结尾时触发。loop=true 时浏览器不会产生 ended，因此单曲循环
+   * 完全由原生媒体元素处理；列表推进只会收到真正需要“下一首”的结束事件。
+   */
+  onEnded?: (channelId: string) => void;
 }
 
 const DEFAULT_BUS_GAIN_DB: Record<BusId, number> = {
@@ -55,6 +65,8 @@ export class AudioEngine {
   );
   private readonly channels = new Map<string, ChannelRuntime>();
   private playbackPermission: "UNKNOWN" | "ALLOWED" | "BLOCKED" = "UNKNOWN";
+
+  constructor(private readonly handlers: AudioEngineHandlers = {}) {}
 
   /**
    * 保留兼容 RPC，但 v0.1 不再有需要等待的 AudioContext 解锁动作。
@@ -230,6 +242,7 @@ export class AudioEngine {
     const channel = this.channels.get(channelId);
     if (!channel) return;
     channel.media.pause();
+    channel.media.removeEventListener("ended", channel.onEnded);
     channel.media.removeAttribute("src");
     channel.media.load();
     this.channels.delete(channelId);
@@ -264,11 +277,17 @@ export class AudioEngine {
     media.loop = options.loop ?? false;
     media.setAttribute("playsinline", "");
 
+    const onEnded = () => {
+      this.handlers.onEnded?.(channelId);
+    };
+    media.addEventListener("ended", onEnded);
+
     const channel: ChannelRuntime = {
       id: channelId,
       busId: options.busId,
       url,
       media,
+      onEnded,
       gainDb: options.gainDb ?? 0,
       fadeScale: 1,
     };
