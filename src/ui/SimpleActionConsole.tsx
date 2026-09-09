@@ -524,7 +524,7 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
           <WaInput
             placeholder="搜索音频…"
             value={query}
-            onInput={(event) => setQuery(event.currentTarget.value)}
+            onInput={(event) => setQuery(event.currentTarget.value ?? "")}
           >
             <Search slot="start" size={16} />
           </WaInput>
