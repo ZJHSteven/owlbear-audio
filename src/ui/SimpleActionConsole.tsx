@@ -1,37 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import OBR, { buildImageUpload } from "@owlbear-rodeo/sdk";
-import WaBadge from "@awesome.me/webawesome/dist/react/badge/index.js";
-import WaButton from "@awesome.me/webawesome/dist/react/button/index.js";
-import WaButtonGroup from "@awesome.me/webawesome/dist/react/button-group/index.js";
-import WaCallout from "@awesome.me/webawesome/dist/react/callout/index.js";
-import WaCard from "@awesome.me/webawesome/dist/react/card/index.js";
-import WaInput from "@awesome.me/webawesome/dist/react/input/index.js";
-import WaOption from "@awesome.me/webawesome/dist/react/option/index.js";
-import WaProgressBar from "@awesome.me/webawesome/dist/react/progress-bar/index.js";
-import WaSelect from "@awesome.me/webawesome/dist/react/select/index.js";
-import WaSlider from "@awesome.me/webawesome/dist/react/slider/index.js";
-import WaTab from "@awesome.me/webawesome/dist/react/tab/index.js";
-import WaTabGroup from "@awesome.me/webawesome/dist/react/tab-group/index.js";
-import WaTabPanel from "@awesome.me/webawesome/dist/react/tab-panel/index.js";
-import WaSwitch from "@awesome.me/webawesome/dist/react/switch/index.js";
 import {
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Library,
-  Loader2,
-  Music2,
-  Pause,
-  Play,
-  Plus,
-  Search,
-  Square,
-  Trash2,
-  Upload,
-  Volume2,
+  LibraryIcon,
+  PlusIcon,
+  SearchIcon,
+  SettingsIcon,
 } from "lucide-react";
-import { BackgroundClient } from "@/runtime/BackgroundClient";
-import type { RuntimeSnapshot } from "@/runtime/protocol";
+
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ImportPresetId } from "@/import/transcode";
 import {
   loadPendingImports,
@@ -43,88 +34,104 @@ import {
   type SimpleLibraryTrack,
   type TrackCategory,
 } from "@/library/simpleLibrary";
+import { BackgroundClient } from "@/runtime/BackgroundClient";
+import type {
+  RuntimePlayCue,
+  RuntimePlaybackMode,
+  RuntimeSnapshot,
+} from "@/runtime/protocol";
+import { ImportDialog } from "@/ui/ImportDialog";
+import { LibrarySidebar, type LibraryFilter } from "@/ui/LibrarySidebar";
+import { NowPlayingBar } from "@/ui/NowPlayingBar";
+import { QueueSheet } from "@/ui/QueueSheet";
+import { SettingsPanel } from "@/ui/SettingsPanel";
+import { TrackList } from "@/ui/TrackList";
+import { WelcomeDialog } from "@/ui/WelcomeDialog";
+import { CATEGORY_LABELS, errorText } from "@/ui/playerDisplay";
+import {
+  hasSeenWelcome,
+  loadPlayerPreferences,
+  markWelcomeSeen,
+  resetWelcomeSeen,
+  savePlayerPreferences,
+  type LocalPlayerPreferences,
+} from "@/ui/playerPreferences";
 
 const client = new BackgroundClient();
 
-const CATEGORY_LABELS: Record<TrackCategory, string> = {
-  MUSIC: "音乐",
-  AMBIENCE: "氛围",
-  SFX: "音效",
-};
-
-const PRESET_LABELS: Record<ImportPresetId, string> = {
-  SPEECH: "语音 · 48 kbps",
-  AMBIENCE: "氛围 · 64 kbps",
-  MUSIC: "音乐 · 96 kbps",
-  ARCHIVE: "高质量 · 128 kbps",
-};
-
 /**
- * Owlbear SDK 在某些宿主错误路径会 reject 一个普通对象而不是 Error。
- * 旧版 `String(error)` 会直接变成 `[object Object]`，因此用户看不到真正原因。
- * 这里优先提取常见 message/error 字段，最后才做安全 JSON 序列化。
+ * 把音乐库条目转换为 Background Runtime 能持久持有的 Cue。
+ *
+ * Cue id 故意使用独立 UUID：同一首曲目允许多次进入队列，不会因为 library id 相同
+ * 而复用同一个 HTMLAudioElement channel。音乐库和队列的关联通过 url 判断即可。
  */
-function errorText(error: unknown): string {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  if (typeof error === "string") return error;
-  if (error && typeof error === "object") {
-    const candidate = error as Record<string, unknown>;
-    for (const key of ["message", "error", "reason", "detail"]) {
-      if (typeof candidate[key] === "string" && candidate[key]) return candidate[key];
-    }
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return "Owlbear 返回了无法解析的错误对象";
-    }
-  }
-  return String(error);
+function cueFromTrack(track: SimpleLibraryTrack, fadeSeconds: number): RuntimePlayCue {
+  return {
+    id: crypto.randomUUID(),
+    name: track.name,
+    type: "PLAY",
+    url: track.url,
+    busId: track.category,
+    loop: false,
+    fadeSeconds,
+  };
 }
 
 function fileDisplayName(file: File): string {
   return file.name.replace(/\.[^.]+$/, "").trim() || "未命名音频";
 }
 
-function formatTime(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return "0:00";
-  const whole = Math.floor(value);
-  const minutes = Math.floor(whole / 60);
-  const seconds = whole % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+function trackMatchesFilter(track: SimpleLibraryTrack, filter: LibraryFilter): boolean {
+  if (filter.kind === "ALL") return true;
+  if (filter.kind === "CATEGORY") return track.category === filter.category;
+  return track.group === filter.group;
 }
 
-function matchesQuery(track: SimpleLibraryTrack, query: string): boolean {
+function trackMatchesQuery(track: SimpleLibraryTrack, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
-  return !needle || track.name.toLocaleLowerCase().includes(needle);
+  if (!needle) return true;
+  return [track.name, track.group, ...track.tags]
+    .some((value) => value.toLocaleLowerCase().includes(needle));
 }
 
+/**
+ * GM / DM 的唯一 Action 页面。
+ *
+ * 页面本身不拥有 <audio>。它只做三件事：
+ * 1) 管理浏览器本地的音乐库索引；
+ * 2) 调 Owlbear Assets 完成转码后的云端保存/选回；
+ * 3) 通过 LOCAL broadcast 遥控隐藏 BackgroundCoordinator。
+ *
+ * 因此 Action 关闭以后，队列、播放模式和实际 HTMLAudioElement 都不会被 React 卸载。
+ */
 export function SimpleActionConsole({ ready }: { ready: boolean }) {
   const [tracks, setTracks] = useState<SimpleLibraryTrack[]>(() => loadSimpleLibrary());
   const [pendingImports, setPendingImports] = useState<PendingImport[]>(() => loadPendingImports());
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null);
+  const [preferences, setPreferences] = useState<LocalPlayerPreferences>(() => loadPlayerPreferences());
+  const [welcomeOpen, setWelcomeOpen] = useState(() => !hasSeenWelcome());
+  const [importOpen, setImportOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"library" | "settings">("library");
+  const [filter, setFilter] = useState<LibraryFilter>({ kind: "ALL" });
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
-  const [status, setStatus] = useState("可以从电脑导入，或从 Owlbear Audio Collection 加入已有音频。");
-  const [masterDb, setMasterDb] = useState(0);
-  const [importCategory, setImportCategory] = useState<TrackCategory>("MUSIC");
-  const [preset, setPreset] = useState<ImportPresetId>("MUSIC");
-  const [defaultLoop, setDefaultLoop] = useState(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState("准备就绪");
 
-  const currentCue = snapshot?.transport.phase === "PLAYING" || snapshot?.transport.phase === "PAUSED"
-    ? snapshot.transport.currentCue
-    : undefined;
-  const currentChannel = useMemo(
-    () => currentCue ? snapshot?.channels.find((channel) => channel.id === `cue:${currentCue.id}`) ?? null : null,
-    [currentCue, snapshot?.channels],
+  const currentCue = snapshot?.transport.currentCue;
+  const currentChannel = useMemo(() => {
+    if (!currentCue) return null;
+    return snapshot?.channels.find((channel) => channel.url === currentCue.url) ?? null;
+  }, [currentCue, snapshot?.channels]);
+  const currentLibraryTrack = useMemo(() => {
+    if (!currentCue) return null;
+    return tracks.find((track) => track.url === currentCue.url) ?? null;
+  }, [currentCue, tracks]);
+  const visibleTracks = useMemo(
+    () => tracks.filter((track) => trackMatchesFilter(track, filter) && trackMatchesQuery(track, query)),
+    [filter, query, tracks],
   );
-  const currentTrack = useMemo(
-    () => currentCue ? tracks.find((track) => track.url === currentCue.url || track.id === currentCue.id) ?? null : null,
-    [currentCue, tracks],
-  );
-  const loopEnabled = currentCue?.loop ?? defaultLoop;
-  const searchedTracks = useMemo(() => tracks.filter((track) => matchesQuery(track, query)), [query, tracks]);
 
   function persistTracks(next: SimpleLibraryTrack[]) {
     setTracks(next);
@@ -136,22 +143,29 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
     savePendingImports(next);
   }
 
+  function persistPreferences(next: LocalPlayerPreferences) {
+    setPreferences(next);
+    savePlayerPreferences(next);
+  }
+
+  /**
+   * Action 只轮询 LOCAL snapshot，不通过网络轮询房间。
+   * 真实 GM→PLAYER 同步仍由 BackgroundCoordinator 的 Owlbear broadcast 完成。
+   */
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
+
     const refresh = async () => {
       try {
         const response = await client.snapshot();
-        if (cancelled) return;
-        setSnapshot(response.snapshot);
-        setMasterDb(response.snapshot.busGainsDb.MASTER);
+        if (!cancelled) setSnapshot(response.snapshot);
       } catch {
-        // Background iframe 和 Action 是并行挂载的；短暂握手失败交给下一轮恢复。
+        // Background iframe 与 Action 并行初始化，首次 1~2 次失败是可恢复的。
       }
     };
+
     void refresh();
-    // 400 ms 只查询同一浏览器里的 Background snapshot，用于让进度条看起来连续；
-    // 真正的跨玩家网络同步仍由 coordinator 的即时广播 + 低频 heartbeat 负责。
     const timer = window.setInterval(() => void refresh(), 400);
     return () => {
       cancelled = true;
@@ -159,10 +173,24 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
     };
   }, [ready]);
 
-  async function importFiles(files: File[]) {
+  /** 首次挂载时把本机偏好的真实播放模式/音量同步进隐藏 Background。 */
+  useEffect(() => {
+    if (!ready) return;
+    void client.setPlaybackMode(preferences.playbackMode).catch(() => undefined);
+    void client.setBusGain("MASTER", preferences.masterDb, 0).catch(() => undefined);
+    // 只做首次恢复；后续用户改设置由对应 handler 即时写入。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  async function importFiles(
+    files: File[],
+    preset: ImportPresetId,
+    category: TrackCategory,
+  ) {
     if (!files.length || busy) return;
     setBusy(true);
     setProgress(0);
+
     try {
       const { transcodeToProductionWebm } = await import("@/import/transcode");
       const uploads = [];
@@ -172,6 +200,7 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
         const source = files[index];
         const name = fileDisplayName(source);
         setStatus(`正在转换 ${index + 1}/${files.length}：${name}`);
+
         const result = await transcodeToProductionWebm(source, {
           preset,
           onProgress: (value) => setProgress((index + value) / files.length),
@@ -180,12 +209,12 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
         uploads.push(
           buildImageUpload(result.file)
             .name(name)
-            .description(`Owlbear Audio · ${CATEGORY_LABELS[importCategory]} · ${result.bitrateKbps} kbps`)
+            .description(`Owlbear Audio · ${CATEGORY_LABELS[category]} · ${result.bitrateKbps} kbps`)
             .build(),
         );
         staged.push({
           name,
-          category: importCategory,
+          category,
           preset: result.preset,
           durationSeconds: result.durationSeconds,
           bitrateKbps: result.bitrateKbps,
@@ -194,43 +223,39 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
       }
 
       persistPending([...pendingImports, ...staged]);
-      setStatus("转换完成。请在 Owlbear 保存窗口中选择专用的 “Owlbear Audio” Collection；保存完成后回来点“完成导入”。");
-      // 官方 SDK 只负责打开宿主保存流程，并不会返回新资产 URL；因此不能在这里
-      // 紧接着自动 downloadImages()，否则会和宿主保存器产生 modal 时序冲突。
+      setStatus("转换完成。请在 Owlbear 原生保存窗口确认保存；完成后会继续登记播放地址。");
       await OBR.assets.uploadImages(uploads, "ATTACHMENT");
+
+      // uploadImages() 成功返回代表宿主保存流程已经结束。公开 API 不返回新 Asset URL，
+      // 所以在同一次“添加音频”流程里紧接着打开 picker，让用户选回刚保存的文件。
+      await recoverPendingImports([...pendingImports, ...staged]);
     } catch (error) {
       setStatus(`导入失败：${errorText(error)}`);
     } finally {
       setBusy(false);
       setProgress(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
-  async function selectFromOwlbear(linkPending = false) {
-    if (!ready || busy) return;
+  async function recoverPendingImports(sourcePending = pendingImports) {
+    if (!ready || busy || sourcePending.length === 0) return;
     setBusy(true);
     try {
-      const search = linkPending ? pendingImports[0]?.name ?? "" : "";
-      const multiple = !linkPending || pendingImports.length > 1;
-      const selected = await OBR.assets.downloadImages(multiple, search, "ATTACHMENT");
+      const search = sourcePending[0]?.name ?? "";
+      const selected = await OBR.assets.downloadImages(sourcePending.length > 1, search, "ATTACHMENT");
       const supported = selected.filter((asset) => asset.image.mime === "video/webm");
+      const remaining = [...sourcePending];
 
-      // 同名素材允许存在，因此不能用一个 Map 覆盖；每选回一个同名资产就消耗一条
-      // pending metadata。这样批量导入两个相同文件名也不会丢分类/质量信息。
-      const remainingPending = [...pendingImports];
       const added: SimpleLibraryTrack[] = supported.map((asset) => {
-        const matchedIndex = linkPending
-          ? remainingPending.findIndex((item) => item.name === asset.name)
-          : -1;
-        const matched = matchedIndex >= 0 ? remainingPending.splice(matchedIndex, 1)[0] : undefined;
+        const matchedIndex = remaining.findIndex((item) => item.name === asset.name);
+        const matched = matchedIndex >= 0 ? remaining.splice(matchedIndex, 1)[0] : undefined;
         return {
           id: crypto.randomUUID(),
           name: asset.name,
           url: asset.image.url,
           mime: asset.image.mime,
           ...(matched?.durationSeconds ? { durationSeconds: matched.durationSeconds } : {}),
-          category: matched?.category ?? importCategory,
+          category: matched?.category ?? preferences.defaultCategory,
           group: "",
           tags: [],
           ...(matched?.preset ? { preset: matched.preset } : {}),
@@ -240,48 +265,68 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
       });
 
       persistTracks(mergeSimpleLibrary(tracks, added));
-      if (linkPending) persistPending(remainingPending);
-
-      if (!selected.length) {
-        setStatus("没有选择任何 Owlbear 资产。");
-      } else if (!added.length) {
-        setStatus("所选资产不是 Owlbear Audio 可播放的 WebM；请从专用 Collection 选择已导入音频。");
+      persistPending(remaining);
+      if (added.length > 0) {
+        setStatus(`已把 ${added.length} 个音频加入音乐库。`);
+        setImportOpen(false);
       } else {
-        const suffix = selected.length !== supported.length ? `；另有 ${selected.length - supported.length} 个非 WebM 被忽略` : "";
-        setStatus(`已加入 ${added.length} 个音频${suffix}。`);
+        setStatus("没有选回可播放的 WebM 音频；可以稍后在“添加音频”里继续登记。");
       }
     } catch (error) {
-      setStatus(`读取 Owlbear 音频失败：${errorText(error)}`);
+      setStatus(`登记音频失败：${errorText(error)}`);
     } finally {
       setBusy(false);
     }
   }
 
-  async function playTrack(track: SimpleLibraryTrack, loop = defaultLoop) {
-    if (!ready || busy) return;
+  function queueWithTrack(track: SimpleLibraryTrack, position: "NOW" | "NEXT" | "END"): RuntimePlayCue[] {
+    const currentQueue = snapshot?.transport.queue ?? [];
+    const nextCue = cueFromTrack(track, preferences.crossfadeSeconds);
+
+    if (position === "NOW") {
+      // “立即播放”默认以当前可见音乐库作为后续列表，更符合普通播放器直觉。
+      const visibleQueue = visibleTracks.map((item) => cueFromTrack(item, preferences.crossfadeSeconds));
+      const selectedIndex = visibleTracks.findIndex((item) => item.id === track.id);
+      if (selectedIndex < 0) return [nextCue];
+      return visibleQueue;
+    }
+
+    if (currentQueue.length === 0) return [nextCue];
+    if (position === "END") return [...currentQueue, nextCue];
+
+    const currentIndex = Math.max(0, snapshot?.transport.currentIndex ?? 0);
+    return [
+      ...currentQueue.slice(0, currentIndex + 1),
+      nextCue,
+      ...currentQueue.slice(currentIndex + 1),
+    ];
+  }
+
+  async function loadQueue(queue: RuntimePlayCue[], startIndex?: number, go = false) {
+    const response = await client.loadPlan({
+      id: "owlbear-audio-library",
+      name: "Owlbear Audio Library",
+      cues: queue,
+      ...(startIndex !== undefined ? { startIndex } : {}),
+      playbackMode: preferences.playbackMode,
+    });
+    setSnapshot(response.snapshot);
+    if (!response.ok) throw new Error(response.error ?? "加载播放队列失败");
+    if (!go) return response;
+    const started = await client.go();
+    setSnapshot(started.snapshot);
+    if (!started.ok) throw new Error(started.error ?? "播放失败");
+    return started;
+  }
+
+  async function playNow(track: SimpleLibraryTrack) {
+    if (busy) return;
     setBusy(true);
-    setStatus(`正在播放：${track.name}`);
     try {
-      await client.unlock();
-      await client.loadPlan({
-        id: "owlbear-audio-simple-player",
-        name: "Owlbear Audio",
-        cues: [
-          {
-            id: track.id,
-            name: track.name,
-            type: "PLAY",
-            url: track.url,
-            busId: "MUSIC",
-            loop,
-            fadeSeconds: currentCue ? 1.2 : 0,
-          },
-        ],
-      });
-      const response = await client.go();
-      setSnapshot(response.snapshot);
-      if (!response.ok) throw new Error(response.error ?? "播放失败");
-      setDefaultLoop(loop);
+      const queue = queueWithTrack(track, "NOW");
+      const startIndex = visibleTracks.findIndex((item) => item.id === track.id);
+      await loadQueue(queue, Math.max(0, startIndex), true);
+      setStatus(`正在播放：${track.name}`);
     } catch (error) {
       setStatus(`播放失败：${errorText(error)}`);
     } finally {
@@ -289,330 +334,280 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
     }
   }
 
-  async function togglePause() {
-    if (!currentCue || !currentChannel) return;
-    setBusy(true);
+  async function addTrackToQueue(track: SimpleLibraryTrack, position: "NEXT" | "END") {
     try {
-      const response = currentChannel.paused
-        ? await client.play({
-            channelId: `cue:${currentCue.id}`,
-            url: currentCue.url,
-            busId: currentCue.busId,
-            gainDb: currentCue.gainDb,
-            loop: currentCue.loop,
-          })
-        : await client.pause(`cue:${currentCue.id}`);
-      setSnapshot(response.snapshot);
-      if (!response.ok) throw new Error(response.error ?? "播放控制失败");
+      const queue = queueWithTrack(track, position);
+      await loadQueue(queue);
+      setStatus(position === "NEXT" ? `下一首将播放：${track.name}` : `已加入队列：${track.name}`);
     } catch (error) {
-      setStatus(`控制播放失败：${errorText(error)}`);
-    } finally {
-      setBusy(false);
+      setStatus(`更新队列失败：${errorText(error)}`);
     }
   }
 
-  async function stopPlayback() {
-    if (busy) return;
-    setBusy(true);
+  async function playQueueCue(cueId: string) {
+    const queue = snapshot?.transport.queue ?? [];
+    const index = queue.findIndex((cue) => cue.id === cueId);
+    if (index < 0) return;
     try {
-      const response = await client.stopAll();
-      setSnapshot(response.snapshot);
-      setStatus("已停止播放。");
+      await loadQueue(queue, index, true);
     } catch (error) {
-      setStatus(`停止失败：${errorText(error)}`);
-    } finally {
-      setBusy(false);
+      setStatus(`切换曲目失败：${errorText(error)}`);
+    }
+  }
+
+  async function removeQueueCue(cueId: string) {
+    const queue = snapshot?.transport.queue ?? [];
+    const currentId = snapshot?.transport.currentCue?.id;
+    const next = queue.filter((cue) => cue.id !== cueId || cue.id === currentId);
+    try {
+      await loadQueue(next);
+    } catch (error) {
+      setStatus(`移除队列曲目失败：${errorText(error)}`);
+    }
+  }
+
+  async function togglePlayback() {
+    if (!currentCue || !currentChannel) return;
+    try {
+      const response = currentChannel.paused
+        ? await client.play({
+            channelId: currentChannel.id,
+            url: currentCue.url,
+            busId: currentCue.busId,
+            gainDb: currentCue.gainDb,
+            loop: snapshot?.transport.playbackMode === "REPEAT_ONE",
+          })
+        : await client.pause(currentChannel.id);
+      setSnapshot(response.snapshot);
+    } catch (error) {
+      setStatus(`播放控制失败：${errorText(error)}`);
     }
   }
 
   async function seek(seconds: number) {
-    if (!currentCue || !currentChannel) return;
+    if (!currentChannel) return;
     try {
-      const response = await client.seek(`cue:${currentCue.id}`, seconds);
+      const response = await client.seek(currentChannel.id, seconds);
       setSnapshot(response.snapshot);
-      if (!response.ok) throw new Error(response.error ?? "跳转失败");
     } catch (error) {
-      setStatus(`进度跳转失败：${errorText(error)}`);
+      setStatus(`跳转失败：${errorText(error)}`);
     }
   }
 
-  async function toggleLoop() {
-    const next = !loopEnabled;
-    setDefaultLoop(next);
-    if (!currentCue || !currentChannel) return;
+  async function step(direction: -1 | 1) {
+    const queue = snapshot?.transport.queue ?? [];
+    if (!queue.length) return;
+    const currentIndex = Math.max(0, snapshot?.transport.currentIndex ?? 0);
+    let nextIndex = currentIndex + direction;
+    if (nextIndex < 0) nextIndex = preferences.playbackMode === "REPEAT_ALL" ? queue.length - 1 : 0;
+    if (nextIndex >= queue.length) nextIndex = preferences.playbackMode === "REPEAT_ALL" ? 0 : queue.length - 1;
     try {
-      const response = await client.setLoop(`cue:${currentCue.id}`, next);
-      setSnapshot(response.snapshot);
-      if (!response.ok) throw new Error(response.error ?? "循环设置失败");
+      await loadQueue(queue, nextIndex, true);
     } catch (error) {
-      setStatus(`循环设置失败：${errorText(error)}`);
+      setStatus(`切换曲目失败：${errorText(error)}`);
     }
   }
 
-  async function stepTrack(direction: -1 | 1) {
-    if (!tracks.length) return;
-    const currentIndex = currentTrack ? tracks.findIndex((item) => item.url === currentTrack.url) : -1;
-    const base = currentIndex >= 0 ? currentIndex : direction > 0 ? -1 : 0;
-    const nextIndex = (base + direction + tracks.length) % tracks.length;
-    await playTrack(tracks[nextIndex], loopEnabled);
+  async function changePlaybackMode(mode: RuntimePlaybackMode) {
+    const next = { ...preferences, playbackMode: mode };
+    persistPreferences(next);
+    try {
+      const response = await client.setPlaybackMode(mode);
+      setSnapshot(response.snapshot);
+    } catch (error) {
+      setStatus(`播放模式设置失败：${errorText(error)}`);
+    }
   }
 
-  async function setMaster(value: number) {
-    setMasterDb(value);
+  async function changeMasterDb(db: number) {
+    const next = { ...preferences, masterDb: db };
+    persistPreferences(next);
     try {
-      const response = await client.setBusGain("MASTER", value, 0.05);
+      const response = await client.setBusGain("MASTER", db, 0.05);
       setSnapshot(response.snapshot);
-      if (!response.ok) throw new Error(response.error ?? "音量设置失败");
     } catch (error) {
       setStatus(`音量设置失败：${errorText(error)}`);
     }
   }
 
-  function removeTrack(track: SimpleLibraryTrack) {
+  function changePreferences(next: LocalPlayerPreferences) {
+    const playbackChanged = next.playbackMode !== preferences.playbackMode;
+    const volumeChanged = next.masterDb !== preferences.masterDb;
+    persistPreferences(next);
+    if (playbackChanged) void client.setPlaybackMode(next.playbackMode).then((r) => setSnapshot(r.snapshot));
+    if (volumeChanged) void client.setBusGain("MASTER", next.masterDb, 0.05).then((r) => setSnapshot(r.snapshot));
+  }
+
+  function removeLibraryTrack(track: SimpleLibraryTrack) {
     persistTracks(tracks.filter((item) => item.id !== track.id));
-    setStatus(`已从本机索引移除“${track.name}”。Owlbear Audio Collection 中的云端文件不会被删除。`);
+    setStatus(`已从本机音乐库移除“${track.name}”。Owlbear 云端文件不会被删除。`);
   }
 
-  function renderTrackList(category?: TrackCategory) {
-    const filtered = category
-      ? searchedTracks.filter((track) => track.category === category)
-      : searchedTracks;
-
-    if (!filtered.length) {
-      return (
-        <WaCallout variant="neutral" appearance="plain">
-          {query ? "当前标签下没有匹配的音频。" : "这里还没有音频。可以先从电脑导入，或添加 Owlbear Audio Collection 中的已有音频。"}
-        </WaCallout>
-      );
-    }
-
-    return (
-      <div className="wa-stack wa-gap-xs">
-        {filtered.map((track) => (
-          <WaCard key={track.id} appearance="outlined">
-            <div className="wa-split wa-gap-s">
-              <div className="wa-cluster wa-gap-s">
-                <WaButton
-                  size="small"
-                  variant="brand"
-                  appearance="filled"
-                  disabled={busy}
-                  aria-label={`播放 ${track.name}`}
-                  onClick={() => void playTrack(track)}
-                >
-                  <Play size={16} />
-                </WaButton>
-                <div>
-                  <strong>{track.name}</strong>
-                  <div>
-                    <small>
-                      {CATEGORY_LABELS[track.category]}
-                      {track.bitrateKbps ? ` · ${track.bitrateKbps} kbps` : ""}
-                      {track.durationSeconds ? ` · ${formatTime(track.durationSeconds)}` : ""}
-                    </small>
-                  </div>
-                </div>
-              </div>
-              <WaButton
-                size="small"
-                appearance="plain"
-                variant="danger"
-                aria-label={`从本机索引移除 ${track.name}`}
-                onClick={() => removeTrack(track)}
-              >
-                <Trash2 size={16} />
-              </WaButton>
-            </div>
-          </WaCard>
-        ))}
-      </div>
-    );
-  }
-
+  const filterTitle = filter.kind === "ALL"
+    ? "全部音频"
+    : filter.kind === "CATEGORY"
+      ? CATEGORY_LABELS[filter.category]
+      : filter.group;
+  const playing = snapshot?.transport.phase === "PLAYING" && currentChannel?.paused === false;
+  const paused = snapshot?.transport.phase === "PAUSED" || Boolean(currentChannel?.paused);
   const duration = currentChannel?.duration && Number.isFinite(currentChannel.duration)
     ? currentChannel.duration
-    : currentTrack?.durationSeconds ?? 0;
-  const currentTime = Math.min(currentChannel?.currentTime ?? 0, duration || Number.POSITIVE_INFINITY);
+    : currentLibraryTrack?.durationSeconds ?? 0;
+  const currentTime = currentChannel?.currentTime ?? 0;
+  const queue = snapshot?.transport.queue ?? [];
+  const currentIndex = snapshot?.transport.currentIndex ?? -1;
 
   return (
-    <main className="wa-stack wa-gap-s">
-      <WaCard appearance="filled-outlined">
-        <div className="wa-split wa-gap-s">
-          <div className="wa-cluster wa-gap-s">
-            <Music2 size={22} />
-            <div>
-              <strong>Owlbear Audio</strong>
-              <div><small>GM 音频控制台</small></div>
-            </div>
-          </div>
-          <WaBadge variant="brand" appearance="outlined">{tracks.length} 个音频</WaBadge>
-        </div>
-      </WaCard>
+    <main className="flex h-[min(640px,100dvh)] min-h-0 flex-col overflow-hidden bg-background text-foreground">
+      <WelcomeDialog
+        open={welcomeOpen}
+        onAcknowledge={() => {
+          markWelcomeSeen();
+          setWelcomeOpen(false);
+        }}
+      />
 
-      <WaCard appearance="outlined">
-        <div className="wa-stack wa-gap-s">
-          <strong>导入与管理</strong>
-          <div className="wa-grid wa-gap-s">
-            <WaSelect
-              label="素材分类"
-              value={importCategory}
-              onChange={(event) => setImportCategory(event.currentTarget.value as TrackCategory)}
-            >
-              <WaOption value="MUSIC">音乐</WaOption>
-              <WaOption value="AMBIENCE">氛围</WaOption>
-              <WaOption value="SFX">音效</WaOption>
-            </WaSelect>
-            <WaSelect
-              label="转码质量"
-              value={preset}
-              onChange={(event) => setPreset(event.currentTarget.value as ImportPresetId)}
-            >
-              <WaOption value="SPEECH">{PRESET_LABELS.SPEECH}</WaOption>
-              <WaOption value="AMBIENCE">{PRESET_LABELS.AMBIENCE}</WaOption>
-              <WaOption value="MUSIC">{PRESET_LABELS.MUSIC}</WaOption>
-              <WaOption value="ARCHIVE">{PRESET_LABELS.ARCHIVE}</WaOption>
-            </WaSelect>
-          </div>
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        defaultPreset={preferences.defaultPreset}
+        defaultCategory={preferences.defaultCategory}
+        busy={busy}
+        progress={progress}
+        status={status}
+        pendingCount={pendingImports.length}
+        onImport={(files, preset, category) => void importFiles(files, preset, category)}
+        onRecoverPending={() => void recoverPendingImports()}
+      />
 
-          <div className="wa-grid wa-gap-s">
-            <WaButton
-              variant="brand"
-              appearance="filled"
-              loading={busy && progress !== null}
-              disabled={busy}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload slot="start" size={16} />
-              从电脑导入
-            </WaButton>
-            <WaButton appearance="outlined" disabled={busy} onClick={() => void selectFromOwlbear(false)}>
-              <Plus slot="start" size={16} />
-              添加已有音频
-            </WaButton>
-          </div>
+      <QueueSheet
+        open={queueOpen}
+        onOpenChange={setQueueOpen}
+        queue={queue}
+        currentCueId={currentCue?.id}
+        onPlayCue={(cueId) => void playQueueCue(cueId)}
+        onRemoveCue={(cueId) => void removeQueueCue(cueId)}
+      />
 
-          {progress !== null && <WaProgressBar value={Math.round(progress * 100)} />}
-
-          {pendingImports.length > 0 && (
-            <WaCallout variant="brand" appearance="outlined">
-              <div className="wa-stack wa-gap-xs">
-                <strong>{pendingImports.length} 个音频已完成本地转码</strong>
-                <span>在 Owlbear 原生保存器把它们放进 “Owlbear Audio” Collection 后，再点下面按钮取回正式 CDN 资产。</span>
-                <WaButton disabled={busy} onClick={() => void selectFromOwlbear(true)}>
-                  <Download slot="start" size={16} />
-                  完成导入
-                </WaButton>
-              </div>
-            </WaCallout>
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as "library" | "settings")}
+        className="min-h-0 flex-1 gap-0"
+      >
+        <header className="flex items-center gap-2 border-b px-3 py-2.5">
+          {activeTab === "library" ? (
+            <LibrarySidebar tracks={tracks} filter={filter} onFilterChange={setFilter} />
+          ) : (
+            <div className="size-7" />
           )}
 
-          <input
-            ref={fileInputRef}
-            hidden
-            type="file"
-            multiple
-            accept="audio/*,video/mp4,video/webm,.m4a,.mp3,.wav,.ogg,.flac,.aac"
-            onChange={(event) => void importFiles(Array.from(event.target.files ?? []))}
-          />
-        </div>
-      </WaCard>
-
-      <WaCard appearance="outlined">
-        <div className="wa-stack wa-gap-s">
-          <div className="wa-split wa-gap-s">
-            <div className="wa-cluster wa-gap-xs"><Library size={18} /><strong>音频库</strong></div>
-            {busy && <Loader2 size={16} />}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">Owlbear Audio</p>
+            <p className="truncate text-[11px] text-muted-foreground">
+              {activeTab === "library" ? filterTitle : "设置"}
+            </p>
           </div>
-          <WaInput
-            placeholder="搜索音频…"
-            value={query}
-            onInput={(event) => setQuery(event.currentTarget.value ?? "")}
-          >
-            <Search slot="start" size={16} />
-          </WaInput>
-          <WaTabGroup>
-            <WaTab panel="all" active>全部</WaTab>
-            <WaTab panel="music">音乐</WaTab>
-            <WaTab panel="ambience">氛围</WaTab>
-            <WaTab panel="sfx">音效</WaTab>
-            <WaTabPanel name="all" active>{renderTrackList()}</WaTabPanel>
-            <WaTabPanel name="music">{renderTrackList("MUSIC")}</WaTabPanel>
-            <WaTabPanel name="ambience">{renderTrackList("AMBIENCE")}</WaTabPanel>
-            <WaTabPanel name="sfx">{renderTrackList("SFX")}</WaTabPanel>
-          </WaTabGroup>
-        </div>
-      </WaCard>
 
-      <WaCard appearance="filled-outlined">
-        <div className="wa-stack wa-gap-s">
-          <div className="wa-split wa-gap-s">
-            <div className="wa-cluster wa-gap-s">
-              <Music2 size={20} />
-              <div>
-                <small>正在播放</small>
-                <div><strong>{currentCue?.name ?? "暂无音频"}</strong></div>
-              </div>
+          <TabsList variant="line" className="h-7">
+            <TabsTrigger value="library" aria-label="音乐库">
+              <LibraryIcon data-icon="inline-start" />
+              音乐库
+            </TabsTrigger>
+            <TabsTrigger value="settings" aria-label="设置">
+              <SettingsIcon data-icon="inline-start" />
+              设置
+            </TabsTrigger>
+          </TabsList>
+        </header>
+
+        <TabsContent value="library" className="min-h-0 flex-1 overflow-hidden">
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex items-center gap-2 px-3 py-3">
+              <InputGroup className="flex-1">
+                <InputGroupAddon><SearchIcon /></InputGroupAddon>
+                <InputGroupInput
+                  value={query}
+                  placeholder="搜索曲目、文件夹或标签"
+                  onChange={(event) => setQuery(event.currentTarget.value)}
+                />
+              </InputGroup>
+              <Button size="sm" onClick={() => setImportOpen(true)}>
+                <PlusIcon data-icon="inline-start" />
+                添加音频
+              </Button>
             </div>
-            <WaBadge variant={snapshot?.transport.phase === "PLAYING" ? "success" : "neutral"} appearance="outlined">
-              {snapshot?.transport.phase === "PLAYING" ? "播放中" : snapshot?.transport.phase === "PAUSED" ? "已暂停" : "空闲"}
-            </WaBadge>
-          </div>
 
-          <WaSlider
-            aria-label="播放进度"
-            min={0}
-            max={Math.max(1, duration)}
-            step={0.1}
-            value={currentTime}
-            disabled={!currentCue || !duration}
-            withTooltip
-            onChange={(event) => void seek(event.currentTarget.value)}
+            <ScrollArea className="min-h-0 flex-1 px-2 pb-3">
+              {visibleTracks.length === 0 ? (
+                <Empty className="min-h-72 border-0">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon"><LibraryIcon /></EmptyMedia>
+                    <EmptyTitle>{tracks.length === 0 ? "上传你的第一个音频" : "没有匹配的音频"}</EmptyTitle>
+                    <EmptyDescription>
+                      {tracks.length === 0
+                        ? "支持批量选择常见音频格式，浏览器会先转成 Opus/WebM，再交给 Owlbear 保存。"
+                        : "换一个分类或搜索词试试。"}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  {tracks.length === 0 && (
+                    <EmptyContent>
+                      <Button onClick={() => setImportOpen(true)}>
+                        <PlusIcon data-icon="inline-start" />
+                        添加音频
+                      </Button>
+                    </EmptyContent>
+                  )}
+                </Empty>
+              ) : (
+                <TrackList
+                  tracks={visibleTracks}
+                  currentCueId={currentLibraryTrack?.id}
+                  busy={busy}
+                  onPlayNow={(track) => void playNow(track)}
+                  onPlayNext={(track) => void addTrackToQueue(track, "NEXT")}
+                  onAddToQueue={(track) => void addTrackToQueue(track, "END")}
+                  onRemove={removeLibraryTrack}
+                />
+              )}
+            </ScrollArea>
+
+            <p className="border-t px-3 py-1.5 text-[11px] text-muted-foreground" role="status">
+              {status}
+            </p>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="settings" className="min-h-0 flex-1 overflow-auto">
+          <SettingsPanel
+            preferences={preferences}
+            snapshot={snapshot}
+            onPreferencesChange={changePreferences}
+            onResetWelcome={() => {
+              resetWelcomeSeen();
+              setWelcomeOpen(true);
+            }}
           />
-          <div className="wa-split wa-gap-s">
-            <small>{formatTime(currentTime)}</small>
-            <small>{formatTime(duration)}</small>
-          </div>
+        </TabsContent>
+      </Tabs>
 
-          <div className="wa-split wa-gap-s">
-            <WaButtonGroup label="播放控制">
-              <WaButton disabled={!tracks.length || busy} aria-label="上一首" onClick={() => void stepTrack(-1)}>
-                <ChevronLeft size={18} />
-              </WaButton>
-              <WaButton
-                variant="brand"
-                appearance="filled"
-                disabled={!currentCue || !currentChannel || busy}
-                aria-label={currentChannel?.paused ? "继续播放" : "暂停"}
-                onClick={() => void togglePause()}
-              >
-                {currentChannel?.paused ? <Play size={18} /> : <Pause size={18} />}
-              </WaButton>
-              <WaButton disabled={!tracks.length || busy} aria-label="下一首" onClick={() => void stepTrack(1)}>
-                <ChevronRight size={18} />
-              </WaButton>
-              <WaButton disabled={!currentCue || busy} aria-label="停止" onClick={() => void stopPlayback()}>
-                <Square size={16} />
-              </WaButton>
-            </WaButtonGroup>
-            <WaSwitch checked={loopEnabled} onChange={() => void toggleLoop()}>循环</WaSwitch>
-          </div>
-
-          <div className="wa-stack wa-gap-xs">
-            <div className="wa-cluster wa-gap-xs"><Volume2 size={16} /><small>本机音量 · {masterDb > 0 ? "+" : ""}{masterDb} dB</small></div>
-            <WaSlider
-              aria-label="本机音量"
-              min={-48}
-              max={6}
-              step={1}
-              value={masterDb}
-              onInput={(event) => setMasterDb(event.currentTarget.value)}
-              onChange={(event) => void setMaster(event.currentTarget.value)}
-            />
-          </div>
-        </div>
-      </WaCard>
-
-      <WaCallout variant="neutral" appearance="plain" role="status">{status}</WaCallout>
+      <NowPlayingBar
+        trackName={currentCue?.name}
+        playing={playing}
+        paused={paused}
+        currentTime={currentTime}
+        duration={duration}
+        masterDb={snapshot?.busGainsDb.MASTER ?? preferences.masterDb}
+        playbackMode={snapshot?.transport.playbackMode ?? preferences.playbackMode}
+        canGoPrevious={queue.length > 0 && currentIndex > 0}
+        canGoNext={queue.length > 0 && (currentIndex < queue.length - 1 || preferences.playbackMode === "REPEAT_ALL")}
+        onTogglePlayback={() => void togglePlayback()}
+        onPrevious={() => void step(-1)}
+        onNext={() => void step(1)}
+        onSeek={(seconds) => void seek(seconds)}
+        onMasterDbChange={(db) => void changeMasterDb(db)}
+        onPlaybackModeChange={(mode) => void changePlaybackMode(mode)}
+        onOpenQueue={() => setQueueOpen(true)}
+      />
     </main>
   );
 }
