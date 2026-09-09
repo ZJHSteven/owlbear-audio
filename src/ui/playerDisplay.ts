@@ -44,6 +44,15 @@ export function formatTime(value: number): string {
 }
 
 /**
+ * shadcn base-nova 的 Slider 底层来自 Base UI，它同时支持单值和多 thumb 范围值，
+ * 因而 TypeScript 回调类型是 `number | readonly number[]`。本项目所有 Slider 都是
+ * 单 thumb，所以在 UI 边界统一收窄成 number，避免每个事件处理器重复写类型判断。
+ */
+export function singleSliderValue(value: number | readonly number[]): number {
+  return typeof value === "number" ? value : (value[0] ?? 0);
+}
+
+/**
  * Owlbear SDK 某些失败路径 reject 的不是 Error，而是普通对象。
  * 直接 String(object) 只会显示令人困惑的 `[object Object]`，所以统一展开常见字段。
  */

@@ -23,6 +23,7 @@ import {
   CATEGORY_LABELS,
   PLAYBACK_MODE_LABELS,
   PRESET_LABELS,
+  singleSliderValue,
 } from "@/ui/playerDisplay";
 import type { LocalPlayerPreferences } from "@/ui/playerPreferences";
 
@@ -125,7 +126,7 @@ export function SettingsPanel({
               max={5}
               step={0.1}
               value={preferences.crossfadeSeconds}
-              onValueChange={(value) => patch({ crossfadeSeconds: value })}
+              onValueChange={(value) => patch({ crossfadeSeconds: singleSliderValue(value) })}
             />
             <FieldDescription>0 秒为直接切换；1–2 秒通常更适合跑团背景音乐。</FieldDescription>
           </Field>
@@ -140,7 +141,7 @@ export function SettingsPanel({
               max={0}
               step={1}
               value={preferences.masterDb}
-              onValueCommitted={(value) => patch({ masterDb: value })}
+              onValueCommitted={(value) => patch({ masterDb: singleSliderValue(value) })}
             />
             <FieldDescription>只影响你当前浏览器，不会改变 PLAYER 或其他 DM 的音量。</FieldDescription>
           </Field>

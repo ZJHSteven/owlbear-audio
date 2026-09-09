@@ -28,6 +28,7 @@ import {
   formatTime,
   PLAYBACK_MODE_LABELS,
   PLAYBACK_MODE_ORDER,
+  singleSliderValue,
 } from "@/ui/playerDisplay";
 
 interface NowPlayingBarProps {
@@ -128,10 +129,10 @@ export function NowPlayingBar({
             step={0.1}
             value={Math.min(Math.max(0, shownTime), Math.max(1, duration))}
             disabled={!hasTrack || duration <= 0}
-            onValueChange={(value) => setScrubTime(value)}
+            onValueChange={(value) => setScrubTime(singleSliderValue(value))}
             onValueCommitted={(value) => {
               setScrubTime(null);
-              onSeek(value);
+              onSeek(singleSliderValue(value));
             }}
           />
           <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
@@ -164,10 +165,10 @@ export function NowPlayingBar({
               step={1}
               value={shownVolume}
               className="max-w-20"
-              onValueChange={(value) => setVolumePreview(value)}
+              onValueChange={(value) => setVolumePreview(singleSliderValue(value))}
               onValueCommitted={(value) => {
                 setVolumePreview(null);
-                onMasterDbChange(value);
+                onMasterDbChange(singleSliderValue(value));
               }}
             />
           </div>

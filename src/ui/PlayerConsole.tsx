@@ -14,7 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import type { RuntimeSnapshot } from "@/runtime/protocol";
 import { BackgroundClient } from "@/runtime/BackgroundClient";
-import { errorText, formatTime } from "@/ui/playerDisplay";
+import { errorText, formatTime, singleSliderValue } from "@/ui/playerDisplay";
 
 const client = new BackgroundClient();
 
@@ -176,8 +176,8 @@ export function PlayerConsole({ ready }: { ready: boolean }) {
           step={1}
           value={muted ? -48 : masterDb}
           disabled={!snapshot}
-          onValueChange={(value) => setMasterDb(value)}
-          onValueCommitted={(value) => void changeMasterDb(value)}
+          onValueChange={(value) => setMasterDb(singleSliderValue(value))}
+          onValueCommitted={(value) => void changeMasterDb(singleSliderValue(value))}
         />
         <Alert className="py-2.5">
           <AlertTitle className="text-xs">连接状态</AlertTitle>
