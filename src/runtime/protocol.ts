@@ -14,10 +14,27 @@ export interface RuntimePlayCue {
   fadeSeconds?: number;
 }
 
+/**
+ * 第一阶段播放器的四种整队列播放策略。
+ *
+ * 注意：这是 Background Runtime 的真实行为，不只是 Action 里的图标状态。
+ * REPEAT_ONE 由底层 HTMLAudioElement.loop 实现；另外三种在媒体 ended 后由
+ * BackgroundCoordinator 选择并启动下一首，因此 Action 关闭后仍然生效。
+ */
+export type RuntimePlaybackMode =
+  | "SEQUENTIAL"
+  | "REPEAT_ONE"
+  | "REPEAT_ALL"
+  | "SHUFFLE";
+
 export interface RuntimePlan {
   id: string;
   name: string;
   cues: RuntimePlayCue[];
+  /** 本次载入后第一次 GO 要播放的索引，默认 0。 */
+  startIndex?: number;
+  /** 队列播放策略，默认保持 Background 当前设置。 */
+  playbackMode?: RuntimePlaybackMode;
 }
 
 export type RuntimeCommand =
@@ -81,6 +98,11 @@ export type RuntimeCommand =
     }
   | {
       id: string;
+      type: "SET_PLAYBACK_MODE";
+      playbackMode: RuntimePlaybackMode;
+    }
+  | {
+      id: string;
       type: "SET_BUS_GAIN";
       busId: BusId;
       gainDb: number;
@@ -101,8 +123,11 @@ export interface RuntimeSnapshot {
     held: boolean;
     currentIndex: number;
     nextIndex: number;
+    playbackMode: RuntimePlaybackMode;
     currentCue?: RuntimePlayCue;
     nextCue?: RuntimePlayCue;
+    /** LOCAL snapshot 可以暴露完整队列；跨玩家 STATE 不会发送这个字段。 */
+    queue: RuntimePlayCue[];
   };
   busGainsDb: Record<BusId, number>;
   channels: Array<{
