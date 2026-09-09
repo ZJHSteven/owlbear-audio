@@ -10,13 +10,17 @@ function App() {
   const [role, setRole] = useState<"GM" | "PLAYER" | null>(null);
   const view = new URLSearchParams(window.location.search).get("view");
   const isBackground = view === "background";
+  const isDevGmPreview = import.meta.env.DEV && view === "preview-gm";
+  const isDevPlayerPreview = import.meta.env.DEV && view === "preview-player";
 
   useEffect(() => {
+    if (isDevGmPreview || isDevPlayerPreview) return;
     if (OBR.isReady) return;
     return OBR.onReady(() => setReady(true));
-  }, []);
+  }, [isDevGmPreview, isDevPlayerPreview]);
 
   useEffect(() => {
+    if (isDevGmPreview || isDevPlayerPreview) return;
     if (!ready) return;
     const applyTheme = (theme: Awaited<ReturnType<typeof OBR.theme.getTheme>>) => {
       // shadcn 使用 `.dark` 读取同一套 neutral design tokens。
@@ -27,9 +31,10 @@ function App() {
 
     void OBR.theme.getTheme().then(applyTheme);
     return OBR.theme.onChange(applyTheme);
-  }, [ready]);
+  }, [isDevGmPreview, isDevPlayerPreview, ready]);
 
   useEffect(() => {
+    if (isDevGmPreview || isDevPlayerPreview) return;
     if (!ready) return;
     let cancelled = false;
     void OBR.player.getRole().then((nextRole) => {
@@ -40,14 +45,20 @@ function App() {
       cancelled = true;
       unsubscribe();
     };
-  }, [ready]);
+  }, [isDevGmPreview, isDevPlayerPreview, ready]);
 
   useEffect(() => {
+    if (isDevGmPreview || isDevPlayerPreview) return;
     if (!ready || !isBackground) return;
     const coordinator = new BackgroundCoordinator();
     coordinator.start();
     return () => coordinator.stop();
-  }, [isBackground, ready]);
+  }, [isBackground, isDevGmPreview, isDevPlayerPreview, ready]);
+
+  // 纯视觉回归入口：只在 `vite dev` 时存在，不进入真实 Owlbear 功能路径。
+  // 它绕过 iframe 握手，让 CDP 可以检查 shadcn 布局；功能 E2E 仍必须进真实房间。
+  if (isDevGmPreview) return <SimpleActionConsole ready={false} />;
+  if (isDevPlayerPreview) return <PlayerConsole ready={false} />;
 
   if (isBackground) {
     return <main aria-label="Owlbear Audio background runtime" hidden />;
