@@ -234,9 +234,15 @@ export class BackgroundCoordinator {
 
         case "LOAD_PLAN":
           this.plan = command.plan;
-          this.currentIndex = -1;
           this.playbackMode = command.plan.playbackMode ?? this.playbackMode;
-          this.nextIndex = this.clampPlanIndex(command.plan.startIndex ?? 0);
+          this.currentIndex = this.currentCue
+            ? command.plan.cues.findIndex((cue) => cue.id === this.currentCue?.id)
+            : -1;
+          this.nextIndex = command.plan.startIndex !== undefined
+            ? this.clampPlanIndex(command.plan.startIndex)
+            : this.currentIndex >= 0
+              ? this.resolveFollowingIndex(this.currentIndex)
+              : 0;
           this.held = false;
           this.revision += 1;
           break;
