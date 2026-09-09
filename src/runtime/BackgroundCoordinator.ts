@@ -135,6 +135,7 @@ export class BackgroundCoordinator {
     const nextCue = this.plan?.cues[this.nextIndex];
 
     return {
+      role: this.role,
       contextState: this.engine.contextState,
       isUnlocked: this.engine.isUnlocked,
       transport: {

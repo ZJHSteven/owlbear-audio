@@ -113,6 +113,8 @@ type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
 export type RuntimeCommandInput = WithoutId<RuntimeCommand>;
 
 export interface RuntimeSnapshot {
+  /** 当前 Background iframe 从 Owlbear 解析到的角色；null 表示宿主握手尚未完成。 */
+  role: "GM" | "PLAYER" | null;
   contextState: AudioContextState | "UNINITIALIZED";
   isUnlocked: boolean;
   transport: {
