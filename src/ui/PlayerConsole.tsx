@@ -77,7 +77,11 @@ export function PlayerConsole({ ready }: { ready: boolean }) {
     try {
       const response = await client.unlock();
       applySnapshot(response.snapshot);
-      setMessage(response.ok ? "声音已启用。" : response.error ?? "启用声音失败");
+      setMessage(
+        response.ok && response.snapshot.isUnlocked
+          ? "声音已启用，正在跟随 GM。"
+          : response.error ?? "浏览器仍阻止自动播放，请再点一次或检查浏览器媒体权限。",
+      );
     } catch (error) {
       setMessage(`启用声音失败：${errorText(error)}`);
     } finally {

@@ -9,6 +9,8 @@ export interface SimpleLibraryTrack {
   mime: string;
   durationSeconds?: number;
   category: TrackCategory;
+  group: string;
+  tags: string[];
   preset?: ImportPresetId;
   bitrateKbps?: number;
   addedAt: number;
@@ -52,6 +54,10 @@ function normalizeTrack(value: unknown): SimpleLibraryTrack | null {
     ...(typeof item.durationSeconds === "number" ? { durationSeconds: item.durationSeconds } : {}),
     // v0.1 旧索引没有 category；迁移时按“音乐”处理，避免升级后素材突然消失。
     category: isCategory(item.category) ? item.category : "MUSIC",
+    group: typeof item.group === "string" ? item.group : "",
+    tags: Array.isArray(item.tags)
+      ? item.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
+      : [],
     ...(item.preset ? { preset: item.preset } : {}),
     ...(typeof item.bitrateKbps === "number" ? { bitrateKbps: item.bitrateKbps } : {}),
     addedAt: typeof item.addedAt === "number" ? item.addedAt : Date.now(),
