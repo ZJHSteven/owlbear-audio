@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ChevronsLeftIcon,
   ChevronsRightIcon,
@@ -88,11 +88,6 @@ export function NowPlayingBar({
   const shownTime = scrubTime ?? currentTime;
   const shownVolume = volumePreview ?? masterDb;
   const hasTrack = Boolean(trackName);
-
-  useEffect(() => {
-    // GM 切歌后旧的拖动预览不能残留到新曲目。
-    setScrubTime(null);
-  }, [trackName]);
 
   function cyclePlaybackMode() {
     const currentIndex = PLAYBACK_MODE_ORDER.indexOf(playbackMode);

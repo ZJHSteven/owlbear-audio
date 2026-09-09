@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { FileAudioIcon, LoaderCircleIcon, UploadIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -67,16 +67,15 @@ export function ImportDialog({
   const [category, setCategory] = useState<TrackCategory>(defaultCategory);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    setPreset(defaultPreset);
-    setCategory(defaultCategory);
-  }, [defaultCategory, defaultPreset, open]);
-
   function closeIfIdle(nextOpen: boolean) {
     if (busy && !nextOpen) return;
     onOpenChange(nextOpen);
-    if (!nextOpen) setFiles([]);
+    if (!nextOpen) {
+      // 关闭后回到用户在设置页配置的默认值，下一次打开就是干净的新导入任务。
+      setFiles([]);
+      setPreset(defaultPreset);
+      setCategory(defaultCategory);
+    }
   }
 
   return (
