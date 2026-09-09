@@ -149,3 +149,5 @@
 ## Asset picker research (2026-09-09)
 - Added docs/asset-storage-research.md covering raw upload RPC response, dedicated Audio Folder bulk re-index, and Scene Item/context-menu URL bridge.
 - Public-API Scene Item route is the current first experiment; raw RPC remains an isolated research branch.
+
+- New public-SDK variant recorded: scene.items.onChange can auto-capture newly dropped IMAGE items, read image.url, register them, and optionally delete the temporary scene item.
