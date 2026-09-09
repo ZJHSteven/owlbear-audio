@@ -1,68 +1,72 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import WaBadge from "@awesome.me/webawesome/dist/react/badge/index.js";
-import WaButton from "@awesome.me/webawesome/dist/react/button/index.js";
-import WaCallout from "@awesome.me/webawesome/dist/react/callout/index.js";
-import WaCard from "@awesome.me/webawesome/dist/react/card/index.js";
-import WaProgressBar from "@awesome.me/webawesome/dist/react/progress-bar/index.js";
-import WaSlider from "@awesome.me/webawesome/dist/react/slider/index.js";
-import { Music2, Volume2, VolumeX } from "lucide-react";
-import { BackgroundClient } from "@/runtime/BackgroundClient";
+import {
+  HeadphonesIcon,
+  Music2Icon,
+  RadioIcon,
+  Volume2Icon,
+  VolumeXIcon,
+} from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
 import type { RuntimeSnapshot } from "@/runtime/protocol";
+import { BackgroundClient } from "@/runtime/BackgroundClient";
+import { errorText, formatTime } from "@/ui/playerDisplay";
 
 const client = new BackgroundClient();
 
-function errorText(error: unknown): string {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
-function formatTime(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return "0:00";
-  const whole = Math.floor(value);
-  return `${Math.floor(whole / 60)}:${(whole % 60).toString().padStart(2, "0")}`;
-}
-
+/**
+ * PLAYER 页面故意比 GM 简单很多：没有音乐库、队列、播放模式或切歌按钮。
+ * PLAYER 只负责确认自己已经连接到 Background、在浏览器需要时完成一次媒体手势，
+ * 然后查看当前曲目与调整“只影响本机”的音量。
+ */
 export function PlayerConsole({ ready }: { ready: boolean }) {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null);
+  const [message, setMessage] = useState("正在连接房间音频…");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("等待 GM 播放音频。");
-  const [masterDb, setMasterDb] = useState(0);
   const [muted, setMuted] = useState(false);
+  const [masterDb, setMasterDb] = useState(0);
   const unmutedDb = useRef(0);
 
   const currentCue = snapshot?.transport.currentCue;
-  const channel = useMemo(
-    () => currentCue ? snapshot?.channels.find((item) => item.id === `remote:${currentCue.id}`) ?? null : null,
-    [currentCue, snapshot?.channels],
-  );
+  const channel = useMemo(() => {
+    if (!currentCue) return null;
+    return snapshot?.channels.find((item) => item.url === currentCue.url) ?? null;
+  }, [currentCue, snapshot?.channels]);
 
   function applySnapshot(next: RuntimeSnapshot) {
     setSnapshot(next);
     const nextMaster = next.busGainsDb.MASTER;
     setMasterDb(nextMaster);
-    if (nextMaster > -90) unmutedDb.current = nextMaster;
+    if (nextMaster > -48) unmutedDb.current = nextMaster;
+
+    if (next.role === null) {
+      setMessage("Background 正在等待 Owlbear 角色握手；会自动重试。 ");
+    } else if (!next.transport.currentCue) {
+      setMessage("已连接。等待 DM 播放音频。");
+    } else if (!next.isUnlocked) {
+      setMessage("浏览器阻止了自动播放，请点一次“启用声音”。");
+    } else {
+      setMessage("已连接并自动跟随 DM。");
+    }
   }
 
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
+
     const refresh = async () => {
       try {
         const response = await client.snapshot();
-        if (cancelled) return;
-        applySnapshot(response.snapshot);
-        if (!response.snapshot.transport.currentCue) setMessage("等待 GM 播放音频。");
-        else if (!response.snapshot.isUnlocked) setMessage("GM 已开始播放。点一次“启用声音”即可加入。");
-        else setMessage("正在自动跟随 GM；位置变化会即时同步，heartbeat 只负责低频纠偏。");
+        if (!cancelled) applySnapshot(response.snapshot);
       } catch (error) {
-        if (!cancelled) setMessage(`连接房间音频失败：${errorText(error)}`);
+        if (!cancelled) setMessage(`后台播放器未连接：${errorText(error)}`);
       }
     };
+
     void refresh();
     const timer = window.setInterval(() => void refresh(), 400);
     return () => {
@@ -72,15 +76,15 @@ export function PlayerConsole({ ready }: { ready: boolean }) {
   }, [ready]);
 
   async function enableAudio() {
-    if (!ready || busy) return;
+    if (busy) return;
     setBusy(true);
     try {
       const response = await client.unlock();
       applySnapshot(response.snapshot);
-      setMessage(
-        response.ok && response.snapshot.isUnlocked
-          ? "声音已启用，正在跟随 GM。"
-          : response.error ?? "浏览器仍阻止自动播放，请再点一次或检查浏览器媒体权限。",
+      if (!response.ok) throw new Error(response.error ?? "启用声音失败");
+      setMessage(response.snapshot.isUnlocked
+        ? "声音已启用，正在跟随 DM。"
+        : "浏览器仍阻止播放，请检查该站点的媒体权限后再试。"
       );
     } catch (error) {
       setMessage(`启用声音失败：${errorText(error)}`);
@@ -89,106 +93,97 @@ export function PlayerConsole({ ready }: { ready: boolean }) {
     }
   }
 
-  async function setMaster(value: number) {
-    setMasterDb(value);
-    if (value > -90) unmutedDb.current = value;
+  async function changeMasterDb(db: number) {
+    setMasterDb(db);
+    if (db > -48) unmutedDb.current = db;
     try {
-      const response = await client.setBusGain("MASTER", value, 0.05);
-      applySnapshot(response.snapshot);
-      if (!response.ok) setMessage(response.error ?? "音量设置失败");
+      const response = await client.setBusGain("MASTER", db, 0.05);
+      setSnapshot(response.snapshot);
     } catch (error) {
       setMessage(`音量设置失败：${errorText(error)}`);
     }
   }
 
   async function toggleMute() {
-    const next = !muted;
-    setMuted(next);
-    await setMaster(next ? -96 : unmutedDb.current);
+    const nextMuted = !muted;
+    setMuted(nextMuted);
+    await changeMasterDb(nextMuted ? -48 : unmutedDb.current);
   }
 
-  const phase = snapshot?.transport.phase ?? "IDLE";
-  const status = !currentCue
-    ? "等待中"
-    : !snapshot?.isUnlocked
-      ? "需要启用"
-      : phase === "PAUSED"
-        ? "GM 已暂停"
-        : phase === "STOPPED"
-          ? "已停止"
-          : "已同步";
   const duration = channel?.duration && Number.isFinite(channel.duration) ? channel.duration : 0;
-  const currentTime = Math.min(channel?.currentTime ?? 0, duration || Number.POSITIVE_INFINITY);
+  const currentTime = Math.max(0, channel?.currentTime ?? 0);
   const progress = duration > 0 ? Math.max(0, Math.min(100, (currentTime / duration) * 100)) : 0;
+  const connected = snapshot?.role === "PLAYER";
+  const playing = snapshot?.transport.phase === "PLAYING" && channel?.paused === false;
 
   return (
-    <main className="wa-stack wa-gap-s">
-      <WaCard appearance="filled-outlined">
-        <div className="wa-split wa-gap-s">
-          <div className="wa-cluster wa-gap-s">
-            <Music2 size={22} />
-            <div>
-              <strong>Owlbear Audio</strong>
-              <div><small>PLAYER 房间音频</small></div>
-            </div>
-          </div>
-          <WaBadge variant={status === "已同步" ? "success" : "neutral"} appearance="outlined">{status}</WaBadge>
+    <main className="flex h-[min(520px,100dvh)] flex-col bg-background p-4 text-foreground">
+      <header className="flex items-center gap-3 border-b pb-4">
+        <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+          <HeadphonesIcon className="size-5" />
         </div>
-      </WaCard>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold">Owlbear Audio</h1>
+            <Badge variant={connected ? "secondary" : "outline"}>
+              {connected ? "PLAYER 已连接" : "正在连接"}
+            </Badge>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">房间音频由 DM 统一控制</p>
+        </div>
+      </header>
 
-      <WaCard appearance="outlined">
-        <div className="wa-stack wa-gap-s">
+      <section className="flex flex-1 flex-col items-center justify-center gap-5 py-6 text-center">
+        <div className="flex size-20 items-center justify-center rounded-2xl bg-muted text-muted-foreground shadow-sm ring-1 ring-foreground/5">
+          {playing ? <RadioIcon className="size-8" /> : <Music2Icon className="size-8" />}
+        </div>
+        <div className="max-w-72">
+          <p className="truncate text-base font-medium">{currentCue?.name ?? "还没有正在播放的音频"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {currentCue ? (playing ? "正在与 DM 同步播放" : "等待 DM 继续播放") : "DM 开始播放后会自动出现在这里"}
+          </p>
+        </div>
+
+        <div className="w-full max-w-80">
+          <Progress value={progress} />
+          <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-muted-foreground">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+        </div>
+
+        {currentCue && snapshot?.isUnlocked === false && (
+          <Button disabled={busy} onClick={() => void enableAudio()}>
+            <Volume2Icon data-icon="inline-start" />
+            启用声音
+          </Button>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3 border-t pt-4">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <small>正在播放</small>
-            <div><strong>{currentCue?.name ?? "暂无音频"}</strong></div>
+            <p className="text-sm font-medium">我的音量</p>
+            <p className="text-xs text-muted-foreground">只影响你当前浏览器</p>
           </div>
-          <WaProgressBar value={progress} />
-          <div className="wa-split wa-gap-s">
-            <small>{formatTime(currentTime)}</small>
-            <small>{formatTime(duration)}</small>
-          </div>
-          {currentCue?.loop && <WaBadge variant="brand" appearance="outlined">循环播放</WaBadge>}
+          <Button variant="ghost" size="icon-sm" aria-label={muted ? "取消静音" : "静音"} onClick={() => void toggleMute()}>
+            {muted ? <VolumeXIcon /> : <Volume2Icon />}
+          </Button>
         </div>
-      </WaCard>
-
-      {!snapshot?.isUnlocked && currentCue && (
-        <WaButton variant="brand" appearance="filled" loading={busy} onClick={() => void enableAudio()}>
-          <Volume2 slot="start" size={16} />
-          启用声音
-        </WaButton>
-      )}
-
-      <WaCard appearance="outlined">
-        <div className="wa-stack wa-gap-s">
-          <div className="wa-split wa-gap-s">
-            <div>
-              <strong>我的音量</strong>
-              <div><small>只影响你自己，不会改变 GM 或其他玩家</small></div>
-            </div>
-            <WaButton
-              appearance="outlined"
-              disabled={!snapshot?.isUnlocked}
-              aria-label={muted ? "取消静音" : "静音"}
-              onClick={() => void toggleMute()}
-            >
-              {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            </WaButton>
-          </div>
-          <WaSlider
-            aria-label="我的音量"
-            min={-48}
-            max={6}
-            step={1}
-            value={muted ? -48 : Math.max(-48, masterDb)}
-            disabled={!snapshot?.isUnlocked || muted}
-            onInput={(event) => setMasterDb(event.currentTarget.value)}
-            onChange={(event) => void setMaster(event.currentTarget.value)}
-          />
-          <small>{muted ? "静音" : `${masterDb > 0 ? "+" : ""}${masterDb} dB`}</small>
-        </div>
-      </WaCard>
-
-      <WaCallout variant="neutral" appearance="plain" role="status">{message}</WaCallout>
+        <Slider
+          min={-48}
+          max={0}
+          step={1}
+          value={muted ? -48 : masterDb}
+          disabled={!snapshot}
+          onValueChange={(value) => setMasterDb(value)}
+          onValueCommitted={(value) => void changeMasterDb(value)}
+        />
+        <Alert className="py-2.5">
+          <AlertTitle className="text-xs">连接状态</AlertTitle>
+          <AlertDescription className="text-xs">{message}</AlertDescription>
+        </Alert>
+      </section>
     </main>
   );
 }
