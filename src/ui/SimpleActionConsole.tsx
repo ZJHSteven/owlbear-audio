@@ -231,6 +231,8 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
           mime: asset.image.mime,
           ...(matched?.durationSeconds ? { durationSeconds: matched.durationSeconds } : {}),
           category: matched?.category ?? importCategory,
+          group: "",
+          tags: [],
           ...(matched?.preset ? { preset: matched.preset } : {}),
           ...(matched?.bitrateKbps ? { bitrateKbps: matched.bitrateKbps } : {}),
           addedAt: Date.now(),
