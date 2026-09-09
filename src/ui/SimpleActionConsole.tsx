@@ -34,6 +34,11 @@ import {
   type SimpleLibraryTrack,
   type TrackCategory,
 } from "@/library/simpleLibrary";
+import {
+  loadRoomLibrary,
+  onRoomLibraryChange,
+  saveRoomLibrary,
+} from "@/library/roomLibrary";
 import { BackgroundClient } from "@/runtime/BackgroundClient";
 import type {
   RuntimePlayCue,
@@ -98,7 +103,7 @@ function trackMatchesQuery(track: SimpleLibraryTrack, query: string): boolean {
  * GM / DM 的唯一 Action 页面。
  *
  * 页面本身不拥有 <audio>。它只做三件事：
- * 1) 管理浏览器本地的音乐库索引；
+ * 1) 管理 Owlbear 房间共享音乐库索引；localStorage 只作为本机缓存与旧版本迁移源；
  * 2) 调 Owlbear Assets 完成转码后的云端保存/选回；
  * 3) 通过 LOCAL broadcast 遥控隐藏 BackgroundCoordinator。
  *
@@ -118,6 +123,7 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [status, setStatus] = useState("准备就绪");
+  const [libraryReady, setLibraryReady] = useState(false);
 
   const currentCue = snapshot?.transport.currentCue;
   const currentChannel = useMemo(() => {
@@ -133,9 +139,24 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
     [filter, query, tracks],
   );
 
-  function persistTracks(next: SimpleLibraryTrack[]) {
+  /**
+   * 房间音乐库写入采用“先乐观显示、失败则回滚”的策略。
+   *
+   * 正常情况下用户点击删除/导入后 UI 会立即响应；如果 Owlbear metadata 因网络或
+   * 16 KiB 容量限制写入失败，则恢复到之前的房间库，避免当前设备和手机悄悄分叉。
+   */
+  async function persistTracks(next: SimpleLibraryTrack[]) {
+    const previous = tracks;
     setTracks(next);
     saveSimpleLibrary(next);
+
+    try {
+      await saveRoomLibrary(next);
+    } catch (error) {
+      setTracks(previous);
+      saveSimpleLibrary(previous);
+      throw error;
+    }
   }
 
   function persistPending(next: PendingImport[]) {
@@ -147,6 +168,62 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
     setPreferences(next);
     savePlayerPreferences(next);
   }
+
+  /**
+   * 初始化房间级音乐库并监听其他设备的变化。
+   *
+   * 迁移规则刻意区分“房间从未建立索引”和“房间索引真实为空”：
+   * - metadata 不存在：如果旧 localStorage 有歌，由这台 GM 自动 seed 到房间；
+   * - metadata 已存在：无条件以房间为准，即使是空数组，也不能把旧缓存里的删除项复活。
+   */
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+
+    const unsubscribe = onRoomLibraryChange((roomLibrary) => {
+      if (cancelled || roomLibrary === null) return;
+      setTracks(roomLibrary.tracks);
+      saveSimpleLibrary(roomLibrary.tracks);
+      setLibraryReady(true);
+    });
+
+    const initialize = async () => {
+      try {
+        const roomLibrary = await loadRoomLibrary();
+        if (cancelled) return;
+
+        if (roomLibrary !== null) {
+          setTracks(roomLibrary.tracks);
+          saveSimpleLibrary(roomLibrary.tracks);
+          setLibraryReady(true);
+          return;
+        }
+
+        const legacyLocalTracks = loadSimpleLibrary();
+        if (legacyLocalTracks.length > 0) {
+          await saveRoomLibrary(legacyLocalTracks);
+          if (cancelled) return;
+          setTracks(legacyLocalTracks);
+          saveSimpleLibrary(legacyLocalTracks);
+          setStatus(`已把旧版本机音乐库的 ${legacyLocalTracks.length} 首音频迁移到当前房间。`);
+        }
+
+        setLibraryReady(true);
+      } catch (error) {
+        if (cancelled) return;
+        // 读取失败时保留 localStorage 缓存，让用户仍能播放；但任何修改前会继续尝试
+        // 写 room metadata，因此不会悄悄把缓存当成新的权威源。
+        setLibraryReady(true);
+        setStatus(`房间音乐库同步失败，当前暂用本机缓存：${errorText(error)}`);
+      }
+    };
+
+    void initialize();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [ready]);
 
   /**
    * Action 只轮询 LOCAL snapshot，不通过网络轮询房间。
@@ -264,7 +341,7 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
         };
       });
 
-      persistTracks(mergeSimpleLibrary(tracks, added));
+      await persistTracks(mergeSimpleLibrary(tracks, added));
       persistPending(remaining);
       if (added.length > 0) {
         setStatus(`已把 ${added.length} 个音频加入音乐库。`);
@@ -438,9 +515,13 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
     if (volumeChanged) void client.setBusGain("MASTER", next.masterDb, 0.05).then((r) => setSnapshot(r.snapshot));
   }
 
-  function removeLibraryTrack(track: SimpleLibraryTrack) {
-    persistTracks(tracks.filter((item) => item.id !== track.id));
-    setStatus(`已从本机音乐库移除“${track.name}”。Owlbear 云端文件不会被删除。`);
+  async function removeLibraryTrack(track: SimpleLibraryTrack) {
+    try {
+      await persistTracks(tracks.filter((item) => item.id !== track.id));
+      setStatus(`已从房间音乐库移除“${track.name}”。Owlbear 云端文件不会被删除。`);
+    } catch (error) {
+      setStatus(`移除失败：${errorText(error)}`);
+    }
   }
 
   const filterTitle = filter.kind === "ALL"
@@ -542,14 +623,18 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
                 <Empty className="min-h-72 border-0">
                   <EmptyHeader>
                     <EmptyMedia variant="icon"><LibraryIcon /></EmptyMedia>
-                    <EmptyTitle>{tracks.length === 0 ? "上传你的第一个音频" : "没有匹配的音频"}</EmptyTitle>
+                    <EmptyTitle>
+                      {!libraryReady ? "正在同步房间音乐库" : tracks.length === 0 ? "上传你的第一个音频" : "没有匹配的音频"}
+                    </EmptyTitle>
                     <EmptyDescription>
-                      {tracks.length === 0
+                      {!libraryReady
+                        ? "正在从 Owlbear Room metadata 读取共享索引…"
+                        : tracks.length === 0
                         ? "支持批量选择常见音频格式，浏览器会先转成 Opus/WebM，再交给 Owlbear 保存。"
                         : "换一个分类或搜索词试试。"}
                     </EmptyDescription>
                   </EmptyHeader>
-                  {tracks.length === 0 && (
+                  {libraryReady && tracks.length === 0 && (
                     <EmptyContent>
                       <Button onClick={() => setImportOpen(true)}>
                         <PlusIcon data-icon="inline-start" />
@@ -566,7 +651,7 @@ export function SimpleActionConsole({ ready }: { ready: boolean }) {
                   onPlayNow={(track) => void playNow(track)}
                   onPlayNext={(track) => void addTrackToQueue(track, "NEXT")}
                   onAddToQueue={(track) => void addTrackToQueue(track, "END")}
-                  onRemove={removeLibraryTrack}
+                  onRemove={(track) => void removeLibraryTrack(track)}
                 />
               )}
             </ScrollArea>
