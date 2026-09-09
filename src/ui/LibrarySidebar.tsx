@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   AudioLinesIcon,
   FolderIcon,
@@ -45,6 +46,7 @@ function sameFilter(left: LibraryFilter, right: LibraryFilter): boolean {
  * 的行为由受控 open 状态完成，立即回到曲目列表。
  */
 export function LibrarySidebar({ tracks, filter, onFilterChange }: LibrarySidebarProps) {
+  const [open, setOpen] = useState(false);
   const groups = [...new Set(tracks.map((track) => track.group.trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "zh-CN"));
 
@@ -76,7 +78,7 @@ export function LibrarySidebar({ tracks, filter, onFilterChange }: LibrarySideba
   ];
 
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger
         render={
           <Button variant="ghost" size="icon-sm" aria-label="打开音乐库分类" />
@@ -95,20 +97,19 @@ export function LibrarySidebar({ tracks, filter, onFilterChange }: LibrarySideba
             const Icon = option.icon;
             const selected = sameFilter(filter, option.filter);
             return (
-              <SheetTrigger
+              <Button
                 key={option.label}
-                render={
-                  <Button
-                    variant={selected ? "secondary" : "ghost"}
-                    className="h-9 w-full justify-start"
-                    onClick={() => onFilterChange(option.filter)}
-                  />
-                }
+                variant={selected ? "secondary" : "ghost"}
+                className="h-9 w-full justify-start"
+                onClick={() => {
+                  onFilterChange(option.filter);
+                  setOpen(false);
+                }}
               >
                 <Icon data-icon="inline-start" />
                 <span className="flex-1 text-left">{option.label}</span>
                 <span className="text-xs tabular-nums text-muted-foreground">{option.count}</span>
-              </SheetTrigger>
+              </Button>
             );
           })}
 
@@ -121,20 +122,19 @@ export function LibrarySidebar({ tracks, filter, onFilterChange }: LibrarySideba
                 const selected = sameFilter(filter, nextFilter);
                 const count = tracks.filter((track) => track.group === group).length;
                 return (
-                  <SheetTrigger
+                  <Button
                     key={group}
-                    render={
-                      <Button
-                        variant={selected ? "secondary" : "ghost"}
-                        className="h-9 w-full justify-start"
-                        onClick={() => onFilterChange(nextFilter)}
-                      />
-                    }
+                    variant={selected ? "secondary" : "ghost"}
+                    className="h-9 w-full justify-start"
+                    onClick={() => {
+                      onFilterChange(nextFilter);
+                      setOpen(false);
+                    }}
                   >
                     <FolderIcon data-icon="inline-start" />
                     <span className="flex-1 truncate text-left">{group}</span>
                     <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
-                  </SheetTrigger>
+                  </Button>
                 );
               })}
             </>
