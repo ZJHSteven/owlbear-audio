@@ -1,6 +1,6 @@
 {
   "name": "Owlbear Audio",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "manifest_version": 1,
   "description": "Import local audio into Owlbear storage, organize it by category and run synchronized room playback from one Action.",
   "author": "ZJHSteven",
