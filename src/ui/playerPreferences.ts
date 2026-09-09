@@ -15,6 +15,8 @@ export interface LocalPlayerPreferences {
   defaultCategory: TrackCategory;
   playbackMode: RuntimePlaybackMode;
   masterDb: number;
+  /** 手动切歌时的交叉淡化时长；0 表示直接切换。 */
+  crossfadeSeconds: number;
 }
 
 const PREFERENCES_KEY = "owlbear-audio/preferences/v2";
@@ -25,6 +27,7 @@ export const DEFAULT_PREFERENCES: LocalPlayerPreferences = {
   defaultCategory: "MUSIC",
   playbackMode: "REPEAT_ONE",
   masterDb: 0,
+  crossfadeSeconds: 1.2,
 };
 
 function isPlaybackMode(value: unknown): value is RuntimePlaybackMode {
@@ -59,6 +62,9 @@ export function loadPlayerPreferences(): LocalPlayerPreferences {
       masterDb: typeof value.masterDb === "number" && Number.isFinite(value.masterDb)
         ? Math.max(-48, Math.min(0, value.masterDb))
         : DEFAULT_PREFERENCES.masterDb,
+      crossfadeSeconds: typeof value.crossfadeSeconds === "number" && Number.isFinite(value.crossfadeSeconds)
+        ? Math.max(0, Math.min(5, value.crossfadeSeconds))
+        : DEFAULT_PREFERENCES.crossfadeSeconds,
     };
   } catch {
     return DEFAULT_PREFERENCES;
