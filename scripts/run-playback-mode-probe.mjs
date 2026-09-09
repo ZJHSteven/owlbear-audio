@@ -83,7 +83,11 @@ const repeatAllAfter = repeatAll.snapshot();
 
 // 4. 随机：固定 Math.random 让结果可复现；当前 A 时必须挑到非 A。
 const originalRandom = Math.random;
-Math.random = () => 0.8; // floor(0.8 * 3) = 2 -> C
+// 用一个确定但会变化的序列，既能稳定复现测试，又不会在“避免连续同一首”的
+// while 循环里永远返回当前索引。
+const randomSequence = [0.8, 0.2, 0.6, 0.1];
+let randomIndex = 0;
+Math.random = () => randomSequence[(randomIndex++) % randomSequence.length];
 const shuffle = makeCoordinator("SHUFFLE", 0);
 await shuffle.go();
 const shuffleStart = shuffle.snapshot();
