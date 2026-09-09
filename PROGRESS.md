@@ -4,13 +4,15 @@
 
 ## 当前结论
 
-- 现状：v0.1.2 候选版已完成本地重构与自动化回归，正在做真实 Owlbear GM/PLAYER E2E。
+- 现状：v0.1.2 已部署并被真实 GM 房间加载；真实使用又暴露“电脑有库、手机同房间空库”，现已把音乐库从 localStorage 权威源迁移到 Owlbear Room metadata。
 - 已完成：Web Awesome 已完全移除；UI 改为和 Family AI 同源风格的 shadcn `base-nova` + neutral + Geist + Lucide。
 - 已完成：隐藏 Background 仍是唯一 AudioEngine owner；Action 只是遥控器，关闭 Action 不销毁播放。
 - 已完成：PLAYER 首次角色读取失败后永久 `role=null` 的恢复缺陷已修复。
 - 已完成：顺序 / 单曲循环 / 列表循环 / 随机四种模式已经是 Background 的真实状态机行为。
-- 正在做：部署新 Worker 后，在真实房间验证 GM→PLAYER 广播、late join、autoplay 手势、导入与播放。
-- 下一步：真实双端 E2E 通过后再决定是否进入 v0.2（编辑标签、跨设备索引、更多高级跑团音频能力）。
+- 已完成：新增 `roomLibrary.ts`，以紧凑元组把名称、Owlbear CDN URL、分类、时长、码率、group/tags 等小索引写入房间 metadata；写入前按整个 metadata 的 UTF-8 JSON 大小检查 16 KiB 上限。
+- 已完成：GM Action 初始化时，房间没有 library metadata 才把旧 localStorage 自动迁移进去；房间已有索引后，房间成为权威源并通过 `onMetadataChange` 实时覆盖电脑/手机缓存。
+- 正在做：在真实房间完成旧电脑库迁移、清空本机缓存后的再读取测试，以及 GM→PLAYER 双端播放 E2E。
+- 下一步：建立持久 PLAYER 浏览器 profile，避免每次无痕窗口重新接受条款；真实双端 E2E 通过后再决定 v0.2。
 
 ## 第一阶段产品路线
 
@@ -60,6 +62,14 @@
 - `uploadImages()` 调 Owlbear 原生保存器。
 - 公开 SDK 不会在上传成功后返回新 Asset URL，因此同一次导入流程仍需 `downloadImages()` 由用户选回刚上传资产。
 - 推荐但不强制使用专用 `Owlbear Audio` Collection；公开 SDK 没有自动创建 Collection 的接口。
+
+### 音乐库索引
+
+- 音频本体：Owlbear Asset/CDN。
+- 房间权威索引：`OBR.room` metadata，key 为 `dev.zjhsteven.owlbear-audio/library`。
+- localStorage：只保留为本机缓存和 v0.1.2 以前的迁移源，不再决定同一房间的真实库内容。
+- Owlbear 官方限制整个 room metadata `< 16 KiB`；当前实现使用紧凑元组并在写入前检查房间全部 metadata 的最终字节数。
+- 若未来真正需要百首级/超大索引，再迁 Worker/D1；第一阶段不提前引入后端状态。
 
 ## 2026-09-09 已完成修复
 
@@ -125,13 +135,14 @@
 - Worker：`owlbear-audio`。
 - Custom Domain：`https://owlbear-audio.zjhstudio.com/`。
 - Manifest：`https://owlbear-audio.zjhstudio.com/manifest.json`。
-- 当前线上仍是上一版 0.1.1；下一步将发布 0.1.2 候选版并做真实 Owlbear E2E。
+- 当前线上版本：0.1.2；Worker Version ID `ff8c5d86-de5a-4966-b22d-2b8a04031e3c`。
+- 下一次部署将包含 Room metadata 跨设备音乐库同步。
 
 ## 已知平台限制
 
 - Owlbear Asset `uploadImages()` 不返回新上传资产的 URL；当前无法彻底消除保存后的“选回刚上传资产”原生确认。
 - Owlbear 公开 SDK 当前没有自动创建 / 切换 Collection 的 API。
-- 音乐库索引仍保存在本机 localStorage；媒体本体在 Owlbear。跨设备完整索引同步尚未实现。
+- Room metadata 总量受官方 16 KiB 限制；第一阶段足够保存轻量索引，但大型音乐库未来需要独立后端索引。
 - Safari / iOS 的 autoplay 与后台媒体行为仍需真实设备验收。
 
 ## 暂不进入 v0.1 的高级功能
