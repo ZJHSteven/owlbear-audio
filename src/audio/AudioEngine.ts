@@ -65,8 +65,11 @@ export class AudioEngine {
   );
   private readonly channels = new Map<string, ChannelRuntime>();
   private playbackPermission: "UNKNOWN" | "ALLOWED" | "BLOCKED" = "UNKNOWN";
+  private readonly handlers: AudioEngineHandlers;
 
-  constructor(private readonly handlers: AudioEngineHandlers = {}) {}
+  constructor(handlers: AudioEngineHandlers = {}) {
+    this.handlers = handlers;
+  }
 
   /**
    * 保留兼容 RPC，但 v0.1 不再有需要等待的 AudioContext 解锁动作。
