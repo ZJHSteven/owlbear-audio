@@ -519,3 +519,8 @@ React + TypeScript + Vite。
 - 不一开始做完整 DAW。
 - 不一开始追求 beatmatching / key matching；跑团的价值优先级低于 Cue、Scene、Devamp、预加载和可靠同步。
 - 不把 UI 固定成若干死预设；预设只是高层入口，底层高级能力始终保留。
+
+
+## Asset import UX research (2026-09-09)
+- See docs/asset-storage-research.md. Priority: Scene Item URL bridge -> Audio Folder bulk re-index -> raw upload RPC response.
+- Do not merge undocumented RPC/private APIs into production before compatibility is proven.
