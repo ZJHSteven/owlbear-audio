@@ -85,6 +85,45 @@ PLAYER 不展示导入、删除、分类或切歌等 GM 管理操作。
 
 ---
 
+## 2026-09-09 晚：跨设备音乐库与 PLAYER 测试环境
+
+### 新暴露的问题
+
+- 同一 GM 在电脑 Action 中已经有音乐库，但手机进入同一房间仍显示空库。
+- 根因不是 Owlbear Asset 丢失：媒体文件已经在 Owlbear 云端；真正丢的是插件自己的
+  `localStorage` 音乐库索引。`localStorage` 天然按浏览器/设备隔离，不能再作为房间
+  音乐库的权威存储。
+- 每次用无痕窗口测试 PLAYER 都要重新接受 Owlbear 条款/引导，测试成本太高。
+
+### 本轮决策
+
+1. **Room metadata 成为音乐库权威源。**
+   - Owlbear 当前公开 `OBR.room.getMetadata / setMetadata / onMetadataChange` 支持房间共享数据；
+   - 官方限制 room metadata 总量 `< 16 kB`，因此这里只保存紧凑索引，不保存音频 blob；
+   - 音频本体继续使用 Owlbear CDN URL。
+2. **localStorage 降级为缓存和 v0.1.2 以前的迁移源。**
+   - 房间没有 library metadata + 当前本机旧库非空：GM 首次自动迁移到 room metadata；
+   - 房间已经有 metadata：房间覆盖本机缓存，避免已删除曲目被旧缓存重新复活；
+   - 监听 `room.onMetadataChange`，电脑/手机/第二个 GM 连接实时看到同一音乐库。
+3. **写入前做 metadata 总体积检查。**
+   - 计算“当前房间全部 metadata + 新 library payload”的 UTF-8 JSON 字节数；
+   - 接近 16 kB 时拒绝写入并给出明确错误，不让 Owlbear SDK 以不透明错误失败；
+   - 后续真正需要百首级大库时再迁 Worker/D1，不在第一阶段提前引入服务器状态。
+4. **建立持久 PLAYER 测试浏览器 profile。**
+   - 不再使用 Incognito；
+   - 单独目录保存 Owlbear PLAYER 的 cookie / 条款确认 / 本地音量等；
+   - 与主 Chrome GM profile 隔离，可长期作为双端 E2E 测试端。
+
+### 验收
+
+- 旧电脑 localStorage 库能自动迁移进当前房间 metadata；
+- 清空另一浏览器本地缓存后，重新打开同一房间仍自动出现相同曲目；
+- 在一个 GM 端添加/删除曲目，另一个连接实时更新；
+- `npm run check` 全绿；
+- 生产 Worker 重新发布后再测 GM → PLAYER 播放、late join、暂停、seek、下一首。
+
+---
+
 ## 目标
 
 开发一个 **零后端优先** 的 Owlbear Rodeo 2 音频扩展，让 GM/DM 可以把本地音乐、环境音和音效导入、转码后尽量存进 Owlbear 自己的资产空间，并在跑团过程中用低认知负担的方式控制复杂音频。
