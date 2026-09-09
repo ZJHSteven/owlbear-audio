@@ -39,6 +39,7 @@ export class BackgroundCoordinator {
   private readonly engine = new AudioEngine();
   private runtimeUnsubscribe: (() => void) | null = null;
   private syncUnsubscribe: (() => void) | null = null;
+  private playerUnsubscribe: (() => void) | null = null;
   private heartbeatTimer: number | null = null;
 
   private role: PlayerRole | null = null;
@@ -76,7 +77,22 @@ export class BackgroundCoordinator {
 
     this.syncUnsubscribe = OBR.broadcast.onMessage(ROOM_SYNC_CHANNEL, (event) => {
       if (!isRoomSyncMessage(event.data)) return;
-      this.handleRoomSync(event.data);
+      void this.handleRoomSync(event.data);
+    });
+
+    /**
+     * 不能只在 background iframe 启动瞬间调用一次 getRole()。
+     *
+     * Owlbear 的 iframe 与宿主握手是异步的，真实设备上偶尔会出现首次角色读取失败；
+     * 旧实现 catch 后就永远保持 role=null。这样 PLAYER 在浏览器拦截 autoplay 后，
+     * 即使点击“启用声音”，UNLOCK 分支也因为 `role === "PLAYER"` 不成立而不会重放
+     * pendingRemoteState，于是表面上就像“PLAYER 永远初始化不了”。
+     *
+     * onChange 是官方 SDK 提供的持续角色来源。即使首次 getRole() 短暂失败，只要宿主
+     * 后续发来 Player 状态，我们仍会恢复正确角色并重新执行 PLAYER 的 late-join 握手。
+     */
+    this.playerUnsubscribe = OBR.player.onChange((player) => {
+      void this.applyRole(player.role);
     });
 
     this.roleReady = this.initializeRole();
@@ -85,8 +101,10 @@ export class BackgroundCoordinator {
   stop(): void {
     this.runtimeUnsubscribe?.();
     this.syncUnsubscribe?.();
+    this.playerUnsubscribe?.();
     this.runtimeUnsubscribe = null;
     this.syncUnsubscribe = null;
+    this.playerUnsubscribe = null;
     if (this.heartbeatTimer !== null) window.clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = null;
     this.engine.stopAll();
@@ -94,13 +112,8 @@ export class BackgroundCoordinator {
 
   /** 只用于自动化回归，生产 UI 不调用。 */
   async debugSetRoleForProbe(role: PlayerRole): Promise<void> {
-    this.role = role;
+    await this.applyRole(role);
     this.roleReady = Promise.resolve(role);
-    this.configureHeartbeat();
-    if (role === "PLAYER") {
-      await this.hydrateRoomCheckpoint();
-      await this.requestRoomState();
-    }
   }
 
   snapshot(): RuntimeSnapshot {
@@ -133,16 +146,38 @@ export class BackgroundCoordinator {
 
   private async initializeRole(): Promise<PlayerRole | null> {
     try {
-      this.role = await OBR.player.getRole();
-      this.configureHeartbeat();
-      if (this.role === "PLAYER") {
-        await this.hydrateRoomCheckpoint();
-        await this.requestRoomState();
-      }
-      return this.role;
+      const role = await OBR.player.getRole();
+      await this.applyRole(role);
+      return role;
     } catch {
-      // SDK role 暂时不可读时，本地 RPC 仍可工作；下一次页面重建会重新初始化。
+      // 首次 SDK role 暂时不可读时不再“永久放弃”：onChange 与 ensureRole() 都能恢复。
       return null;
+    }
+  }
+
+  /**
+   * 把角色切换的所有副作用集中在这里，避免 getRole / onChange / 自动化探针三套逻辑漂移。
+   *
+   * 从 GM -> PLAYER 时立即读取 room checkpoint 并主动 STATE_REQUEST；从 PLAYER -> GM 时
+   * 开启 heartbeat。相同角色的重复 onChange 不重复做 late-join 请求，减少无意义广播。
+   */
+  private async applyRole(role: PlayerRole): Promise<void> {
+    const previousRole = this.role;
+    this.role = role;
+    this.configureHeartbeat();
+
+    if (role !== "PLAYER") return;
+
+    if (previousRole !== "PLAYER") {
+      await this.hydrateRoomCheckpoint();
+      await this.requestRoomState();
+    }
+
+    // 如果 PLAYER 之前已经收到 STATE，但当时因为 role=null / autoplay 被拦而积压，
+    // 角色恢复以后马上再尝试一次；不必等下一个 5 秒 heartbeat。
+    if (this.latestRemoteState && this.engine.isUnlocked) {
+      this.pendingRemoteState = this.latestRemoteState;
+      await this.drainRemoteStateQueue();
     }
   }
 
@@ -199,7 +234,10 @@ export class BackgroundCoordinator {
 
         case "UNLOCK":
           await this.engine.unlock();
-          if (this.role === "PLAYER" && this.latestRemoteState) {
+          // ensureRole() 会修复“background 启动时角色读取失败”的场景；即便第二次读取
+          // 仍失败，也宁可把已确认来自远端 GM 的最新 STATE 重放，而不是让按钮永久失效。
+          await this.ensureRole();
+          if (this.role !== "GM" && this.latestRemoteState) {
             this.pendingRemoteState = this.latestRemoteState;
             await this.drainRemoteStateQueue();
           }
@@ -336,9 +374,12 @@ export class BackgroundCoordinator {
     this.revision += 1;
   }
 
-  private handleRoomSync(message: RoomSyncMessage): void {
+  private async handleRoomSync(message: RoomSyncMessage): Promise<void> {
     if (message.type === "STATE_REQUEST") {
-      if (this.role === "GM") void this.publishAuthoritativeState();
+      // STATE_REQUEST 很可能恰好发生在 background 刚启动时；旧实现 role=null 会直接丢掉
+      // 这次请求，PLAYER 只能赌 heartbeat。现在请求到来时主动完成一次角色解析。
+      const role = await this.ensureRole();
+      if (role === "GM") await this.publishAuthoritativeState();
       return;
     }
 
